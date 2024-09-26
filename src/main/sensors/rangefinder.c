@@ -256,6 +256,9 @@ bool rangefinderProcess(float cosTiltAngle)
         rangefinder.calculatedAltitude = rangefinder.rawAltitude * cosTiltAngle;
     }
 
+//    DEBUG_SET(DEBUG_FLOW, 4, rangefinder.calculatedAltitude );
+//    DEBUG_SET(DEBUG_FLOW, 7, ((int32_t)(100.0*cosTiltAngle)) );
+
     return true;
 }
 

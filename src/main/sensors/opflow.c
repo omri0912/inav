@@ -63,6 +63,8 @@
 
 #include "build/debug.h"
 
+#include "flyz.h"
+
 opflow_t opflow;
 
 #ifdef USE_OPFLOW
@@ -211,7 +213,11 @@ void opflowUpdate(timeUs_t currentTimeUs)
 
             // Calculate flow rate and accumulated body rate
             opflow.flowRate[X] = opflow.dev.rawData.flowRateRaw[X] * integralToRateScaler;
-            opflow.flowRate[Y] = opflow.dev.rawData.flowRateRaw[Y] * integralToRateScaler;
+#ifdef VERTICAL_OPFLOW
+            extern timeDelta_t deltaTimeOmri;      // Integration timeframe of motionX/Y
+            const float integralToRateScalerY = (opticalFlowConfig()->opflow_scale > 0.01f) ? (1.0e6f / deltaTimeOmri) / (float)opticalFlowConfig()->opflow_scale : 0.0f;
+            opflow.flowRate[Y] = opflow.dev.rawData.flowRateRaw[Y] * integralToRateScalerY;
+#endif
 
             // Only update DEBUG_FLOW_RAW if flow is good
             DEBUG_SET(DEBUG_FLOW_RAW, 0, (opflow.flowRate[X]));

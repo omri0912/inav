@@ -41,6 +41,8 @@
 
 #include "flight/imu.h"
 
+#include "flyz.h"
+
 extern navigationPosEstimator_t posEstimator;
 
 #ifdef USE_OPFLOW
@@ -72,6 +74,16 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
     if (!canUseFlow) {
         return false;
     }
+
+#ifdef VERTICAL_OPFLOW_DEMO
+    static float  x = 0.0;
+    static float y = 0.0;
+    x += ((posEstimator.flow.flowRate[X] - posEstimator.flow.bodyRate[X]) * posEstimator.surface.alt)*ctx->dt;
+    y += ((posEstimator.flow.flowRate[Y] - posEstimator.flow.bodyRate[Y]) * posEstimator.surface.alt)*ctx->dt;
+    DEBUG_SET(DEBUG_FLOW, 0, x);
+    DEBUG_SET(DEBUG_FLOW, 1, y);
+    DEBUG_SET(DEBUG_FLOW, 2, posEstimator.surface.alt);
+#endif
 
     // Calculate linear velocity based on angular velocity and altitude
     // Technically we should calculate arc length here, but for fast sampling this is accurate enough
@@ -110,10 +122,14 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
         ctx->newEPH = updateEPE(posEstimator.est.eph, ctx->dt, calc_length_pythagorean_2D(flowResidualX, flowResidualY), positionEstimationConfig()->w_xy_flow_p);
     }
 
+#ifndef VERTICAL_OPFLOW_DEMO
     DEBUG_SET(DEBUG_FLOW, 0, RADIANS_TO_DEGREES(posEstimator.flow.flowRate[X]));
     DEBUG_SET(DEBUG_FLOW, 1, RADIANS_TO_DEGREES(posEstimator.flow.flowRate[Y]));
     DEBUG_SET(DEBUG_FLOW, 2, posEstimator.est.flowCoordinates[X]);
     DEBUG_SET(DEBUG_FLOW, 3, posEstimator.est.flowCoordinates[Y]);
+    DEBUG_SET(DEBUG_FLOW, 4, ((int32_t)(10*ctx->estPosCorr.y)));
+    DEBUG_SET(DEBUG_FLOW, 7, (posEstimator.surface.alt));
+#endif
 
     return true;
 #else
