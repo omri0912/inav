@@ -1,5 +1,6 @@
 main_sources(COMMON_SRC
     main.c
+	vgps.c
 
     target/common_hardware.c
 

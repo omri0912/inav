@@ -146,6 +146,7 @@
 #include "scheduler/scheduler.h"
 
 #include "telemetry/telemetry.h"
+#include "vgps.h"
 
 #ifdef USE_HARDWARE_REVISION_DETECTION
 #include "hardware_revision.h"
@@ -207,6 +208,9 @@ void init(void)
 
     // initialize IO (needed for all IO operations)
     IOInitGlobal();
+
+    // init 
+    vGpsInit();
 
 #ifdef USE_HARDWARE_REVISION_DETECTION
     detectHardwareRevision();

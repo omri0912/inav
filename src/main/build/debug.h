@@ -72,5 +72,6 @@ typedef enum {
     DEBUG_RATE_DYNAMICS,
     DEBUG_LANDING,
     DEBUG_POS_EST,
+    DEBUG_VGPS, /// applicable if BLACKBOX_USING_DEBUG is set to 1 
     DEBUG_COUNT
 } debugType_e;

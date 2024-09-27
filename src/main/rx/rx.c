@@ -65,6 +65,8 @@
 #include "rx/mavlink.h"
 #include "rx/sim.h"
 
+#include "vgps.h"
+
 const char rcChannelLetters[] = "AERT";
 
 static uint16_t rssi = 0;                  // range: [0;1023]
@@ -512,11 +514,15 @@ bool calculateRxChannelsAndUpdateFailsafe(timeUs_t currentTimeUs)
 #endif
 
     // Update failsafe
+#if WORK_WITHOUT_RC_FROM_CLI // when usig cli instead of RC - pretend that RX is alive wit hthe RC 
+      failsafeOnValidDataReceived();
+#else      
     if (rxFlightChannelsValid && rxSignalReceived) {
         failsafeOnValidDataReceived();
     } else {
         failsafeOnValidDataFailed();
     }
+#endif
 
     rcSampleIndex++;
     return true;

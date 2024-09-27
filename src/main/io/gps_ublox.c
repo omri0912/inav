@@ -52,6 +52,7 @@
 
 #include "gps_ublox.h"
 #include "gps_ublox_utils.h"
+#include "vgps.h"
 
 
 // SBAS_AUTO, SBAS_EGNOS, SBAS_WAAS, SBAS_MSAS, SBAS_GAGAN, SBAS_NONE
@@ -91,20 +92,23 @@ static uint8_t _ck_b;
 // State machine state
 static bool _skip_packet;
 static uint8_t _step;
-static uint8_t _msg_id;
+uint8_t _msg_id; // used in vgps.c to parse gps data 
 static uint16_t _payload_length;
 static uint16_t _payload_counter;
 
-static uint8_t next_fix_type;
+uint8_t next_fix_type; // used in vgps.c to parse gps data 
 static uint8_t _class;
-static uint8_t _ack_state;
+uint8_t _ack_state; // used in vgps.c to parse gps data 
 static uint8_t _ack_waiting_msg;
 
 // do we have new position information?
-static bool _new_position;
+bool _new_position; // used in vgps.c to parse gps data 
 
 // do we have new speed information?
-static bool _new_speed;
+bool _new_speed; // used in vgps.c to parse gps data 
+
+// buffer 
+ubx_buffer _buffer; // used in vgps.c to parse gps data 
 
 // Need this to determine if Galileo capable only
 static struct {
@@ -132,21 +136,6 @@ static union {
     ubx_message message;
     uint8_t bytes[58];
 } send_buffer;
-
-// Receive buffer
-static union {
-    ubx_nav_posllh posllh;
-    ubx_nav_status status;
-    ubx_nav_solution solution;
-    ubx_nav_velned velned;
-    ubx_nav_pvt pvt;
-    ubx_nav_svinfo svinfo;
-    ubx_mon_ver ver;
-    ubx_nav_timeutc timeutc;
-    ubx_ack_ack ack;
-    ubx_mon_gnss gnss;
-    uint8_t bytes[UBLOX_BUFFER_SIZE];
-} _buffer;
 
 bool gpsUbloxHasGalileo(void)
 {
@@ -537,6 +526,12 @@ static uint32_t gpsDecodeHardwareVersion(const char * szBuf, unsigned nBufSize)
 
 static bool gpsParseFrameUBLOX(void)
 {
+    // during vgps the real gps data is parsed into a backup gps buffer for debug purposes 
+    if ( vGpsIsActive() ) {
+        // while active - parse into backup db 
+        return vGpsParseFrame();
+    }
+    
     switch (_msg_id) {
     case MSG_POSLLH:
         gpsSol.llh.lon = _buffer.posllh.longitude;
@@ -558,12 +553,16 @@ static bool gpsParseFrameUBLOX(void)
         next_fix_type = gpsMapFixType(_buffer.solution.fix_status & NAV_STATUS_FIX_VALID, _buffer.solution.fix_type);
         if (next_fix_type == GPS_NO_FIX)
             gpsSol.fixType = GPS_NO_FIX;
+        if ( _buffer.solution.satellites > gpsSol.numSat ) { // callback per new sat 
+            vGpsAtMoreSat(_buffer.solution.satellites);
+        }
         gpsSol.numSat = _buffer.solution.satellites;
         gpsSol.hdop = gpsConstrainHDOP(_buffer.solution.position_DOP);
         break;
     case MSG_VELNED:
         gpsSol.groundSpeed = _buffer.velned.speed_2d;    // cm/s
         gpsSol.groundCourse = (uint16_t) (_buffer.velned.heading_2d / 10000);     // Heading 2D deg * 100000 rescaled to deg * 10
+        vGpsHeading(_buffer.velned.heading_2d); // callback per headign update to filter it 
         gpsSol.velNED[X] = _buffer.velned.ned_north;
         gpsSol.velNED[Y] = _buffer.velned.ned_east;
         gpsSol.velNED[Z] = _buffer.velned.ned_down;
@@ -582,6 +581,7 @@ static bool gpsParseFrameUBLOX(void)
             gpsSol.time.millis = _buffer.timeutc.nano / (1000*1000);
 
             gpsSol.flags.validTime = true;
+            vGpsAtGpsTimeUpdate(); // callback per time update to sync gps time and mcu time 
         } else {
             gpsSol.flags.validTime = false;
         }
@@ -597,6 +597,10 @@ static bool gpsParseFrameUBLOX(void)
         gpsSol.velNED[Z]=_buffer.pvt.ned_down / 10;   // to cm/s
         gpsSol.groundSpeed = _buffer.pvt.speed_2d / 10;    // to cm/s
         gpsSol.groundCourse = (uint16_t) (_buffer.pvt.heading_2d / 10000);     // Heading 2D deg * 100000 rescaled to deg * 10
+        vGpsHeading(_buffer.pvt.heading_2d); // callback to filter heading jitter 
+        if ( _buffer.pvt.satellites > gpsSol.numSat ) { // callback per new sat 
+            vGpsAtMoreSat(_buffer.pvt.satellites);
+        }
         gpsSol.numSat = _buffer.pvt.satellites;
         gpsSol.eph = gpsConstrainEPE(_buffer.pvt.horizontal_accuracy / 10);
         gpsSol.epv = gpsConstrainEPE(_buffer.pvt.vertical_accuracy / 10);
@@ -615,6 +619,7 @@ static bool gpsParseFrameUBLOX(void)
             gpsSol.time.millis = _buffer.pvt.nano / (1000*1000);
 
             gpsSol.flags.validTime = true;
+            vGpsAtGpsTimeUpdate(); // callback per time update to sync gps time and mcu time 
         } else {
             gpsSol.flags.validTime = false;
         }
@@ -683,6 +688,10 @@ static bool gpsParseFrameUBLOX(void)
     default:
         return false;
     }
+
+#if FAKE_GPS // if set to 1 - after each gps real packet - force fake values in the same timing 
+    vGpsFake();
+#endif
 
     // we only return true when we get new position and speed data
     // this ensures we don't use stale data

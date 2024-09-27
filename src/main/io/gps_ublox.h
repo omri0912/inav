@@ -410,6 +410,21 @@ typedef enum {
     NAV_STATUS_FIX_VALID = 1
 } ubx_nav_status_bits_t;
 
+// Receive buffer used also by the vgps 
+typedef union {
+    ubx_nav_posllh posllh;
+    ubx_nav_status status;
+    ubx_nav_solution solution;
+    ubx_nav_velned velned;
+    ubx_nav_pvt pvt;
+    ubx_nav_svinfo svinfo;
+    ubx_mon_ver ver;
+    ubx_nav_timeutc timeutc;
+    ubx_ack_ack ack;
+    ubx_mon_gnss gnss;
+    uint8_t bytes[UBLOX_BUFFER_SIZE];
+} ubx_buffer;
+
 uint8_t gpsUbloxMaxGnss(void);
 timeMs_t gpsUbloxCapLastUpdate(void);
 

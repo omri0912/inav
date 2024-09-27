@@ -92,6 +92,8 @@
 
 #include "config/feature.h"
 
+#include "vgps.h"
+
 void taskHandleSerial(timeUs_t currentTimeUs)
 {
     UNUSED(currentTimeUs);
@@ -159,6 +161,7 @@ void taskProcessGPS(timeUs_t currentTimeUs)
     // hardware, wrong baud rates, init GPS if needed, etc. Don't use SENSOR_GPS here as gpsThread() can and will
     // change this based on available hardware
     if (feature(FEATURE_GPS)) {
+        vGpsUpdate(); // 50hz vgps refresh task before all the rest of the gps 
         if (gpsUpdate()) {
 #ifdef USE_WIND_ESTIMATOR
             updateWindEstimator(currentTimeUs);
@@ -481,7 +484,7 @@ cfTask_t cfTasks[TASK_COUNT] = {
     [TASK_GPS] = {
         .taskName = "GPS",
         .taskFunc = taskProcessGPS,
-        .desiredPeriod = TASK_PERIOD_HZ(50),      // GPS usually don't go raster than 10Hz
+        .desiredPeriod = TASK_PERIOD_HZ(50),      // GPS usually don't go faster than 10Hz
         .staticPriority = TASK_PRIORITY_MEDIUM,
     },
 #endif

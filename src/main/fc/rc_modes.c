@@ -38,6 +38,8 @@
 
 #include "rx/rx.h"
 
+#include "vgps.h"
+
 static uint8_t specifiedConditionCountPerMode[CHECKBOX_ITEM_COUNT];
 static bool isUsingNAVModes = false;
 
@@ -124,6 +126,11 @@ bool isUsingNavigationModes(void)
 
 bool IS_RC_MODE_ACTIVE(boxId_e boxId)
 {
+#if WORK_WITHOUT_RC_FROM_CLI
+    if ( vGpsOverideRcSwitches(boxId) ) { // method to force RC aux switches from cli where cli sets boolean values to boxId 
+        return true;
+    }
+#endif    
     return bitArrayGet(rcModeActivationMask.bits, boxId);
 }
 
