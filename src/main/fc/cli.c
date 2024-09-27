@@ -354,6 +354,9 @@ static void cliPrintf(const char *format, ...)
 }
 
 
+#ifndef VGPS
+static 
+#endif
 void cliPrintLinef(const char *format, ...) // vgps: used in vgps.c 
 {
     va_list va;
@@ -4364,7 +4367,9 @@ const clicmd_t cmdTable[] = {
     CLI_COMMAND_DEF("osd_layout", "get or set the layout of OSD items", "[<layout> [<item> [<col> <row> [<visible>]]]]", cliOsdLayout),
 #endif
     CLI_COMMAND_DEF("timer_output_mode", "get or set the outputmode for a given timer.",  "[<timer> [<AUTO|MOTORS|SERVOS>]]", cliTimerOutputMode),
+#ifdef VGPS
     CLI_COMMAND_DEF("vgps", "vgps status and commands", "[arm|blackbox|mission|poshold]", vGpsCli ),
+#endif
 };
 
 static void cliHelp(char *cmdline)
@@ -4516,7 +4521,7 @@ void cliEnter(serialPort_t *serialPort)
     resetCommandBatch();
 #endif
 
-#if !WORK_WITHOUT_RC_FROM_CLI // do not prevent arming from cli 
+#if !defined(VGPS) || !WORK_WITHOUT_RC_FROM_CLI // do not prevent arming from cli 
     ENABLE_ARMING_FLAG(ARMING_DISABLED_CLI);
 #endif     
 }

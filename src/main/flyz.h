@@ -4,6 +4,7 @@
 #define BLACKBOX_USING_DEBUG        0
 
 #define VERTICAL_OPFLOW 
+#define VGPS 
 
 #define VERTICAL_OPFLOW_DEMO
 

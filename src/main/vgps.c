@@ -59,6 +59,7 @@
 #include "sensors/sensors.h"
 #include "sensors/barometer.h"
 
+#ifdef VGPS
 
 #define VERIFY_DISTANCE                     0 // recalculate distance from calculated coordinates to ensure correctness 
 #define VGPS_GROUND_SPEED_CM_SEC            30 // CM/SEC 
@@ -965,3 +966,5 @@ bool vGpsParseFrame(void)
 
     return false;
 }
+
+#endif // ifdef VGPS

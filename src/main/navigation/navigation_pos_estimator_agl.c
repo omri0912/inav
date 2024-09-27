@@ -28,6 +28,8 @@
 #include <string.h>
 
 #include "platform.h"
+#include "target.h"
+#include "common.h"
 
 #include "build/build_config.h"
 #include "build/debug.h"

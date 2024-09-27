@@ -514,7 +514,7 @@ bool calculateRxChannelsAndUpdateFailsafe(timeUs_t currentTimeUs)
 #endif
 
     // Update failsafe
-#if WORK_WITHOUT_RC_FROM_CLI // when usig cli instead of RC - pretend that RX is alive wit hthe RC 
+#if defined(VGPS) && WORK_WITHOUT_RC_FROM_CLI // when usig cli instead of RC - pretend that RX is alive wit hthe RC 
       failsafeOnValidDataReceived();
 #else      
     if (rxFlightChannelsValid && rxSignalReceived) {

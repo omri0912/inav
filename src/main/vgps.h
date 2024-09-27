@@ -6,6 +6,8 @@
 #include "fc/rc_modes.h"
 #include "flyz.h"
 
+#ifdef VGPS
+
 #define FAKE_GPS 0 // set to 1 if GPS chip defected 
 
 extern void vGpsAtGpsTimeUpdate(void);
@@ -43,3 +45,4 @@ typedef enum {
 } DEBUG_VGPS_TYPE;
 #endif
 
+#endif

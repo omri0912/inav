@@ -526,12 +526,14 @@ static uint32_t gpsDecodeHardwareVersion(const char * szBuf, unsigned nBufSize)
 
 static bool gpsParseFrameUBLOX(void)
 {
+#ifdef VGPS
     // during vgps the real gps data is parsed into a backup gps buffer for debug purposes 
     if ( vGpsIsActive() ) {
         // while active - parse into backup db 
         return vGpsParseFrame();
     }
-    
+#endif
+
     switch (_msg_id) {
     case MSG_POSLLH:
         gpsSol.llh.lon = _buffer.posllh.longitude;
@@ -553,16 +555,20 @@ static bool gpsParseFrameUBLOX(void)
         next_fix_type = gpsMapFixType(_buffer.solution.fix_status & NAV_STATUS_FIX_VALID, _buffer.solution.fix_type);
         if (next_fix_type == GPS_NO_FIX)
             gpsSol.fixType = GPS_NO_FIX;
+#ifdef VGPS
         if ( _buffer.solution.satellites > gpsSol.numSat ) { // callback per new sat 
             vGpsAtMoreSat(_buffer.solution.satellites);
         }
+#endif
         gpsSol.numSat = _buffer.solution.satellites;
         gpsSol.hdop = gpsConstrainHDOP(_buffer.solution.position_DOP);
         break;
     case MSG_VELNED:
         gpsSol.groundSpeed = _buffer.velned.speed_2d;    // cm/s
         gpsSol.groundCourse = (uint16_t) (_buffer.velned.heading_2d / 10000);     // Heading 2D deg * 100000 rescaled to deg * 10
+#ifdef VGPS
         vGpsHeading(_buffer.velned.heading_2d); // callback per headign update to filter it 
+#endif        
         gpsSol.velNED[X] = _buffer.velned.ned_north;
         gpsSol.velNED[Y] = _buffer.velned.ned_east;
         gpsSol.velNED[Z] = _buffer.velned.ned_down;
@@ -581,7 +587,9 @@ static bool gpsParseFrameUBLOX(void)
             gpsSol.time.millis = _buffer.timeutc.nano / (1000*1000);
 
             gpsSol.flags.validTime = true;
+#ifdef VGPS
             vGpsAtGpsTimeUpdate(); // callback per time update to sync gps time and mcu time 
+#endif            
         } else {
             gpsSol.flags.validTime = false;
         }
@@ -597,10 +605,12 @@ static bool gpsParseFrameUBLOX(void)
         gpsSol.velNED[Z]=_buffer.pvt.ned_down / 10;   // to cm/s
         gpsSol.groundSpeed = _buffer.pvt.speed_2d / 10;    // to cm/s
         gpsSol.groundCourse = (uint16_t) (_buffer.pvt.heading_2d / 10000);     // Heading 2D deg * 100000 rescaled to deg * 10
+#ifdef VGPS
         vGpsHeading(_buffer.pvt.heading_2d); // callback to filter heading jitter 
         if ( _buffer.pvt.satellites > gpsSol.numSat ) { // callback per new sat 
             vGpsAtMoreSat(_buffer.pvt.satellites);
         }
+#endif       
         gpsSol.numSat = _buffer.pvt.satellites;
         gpsSol.eph = gpsConstrainEPE(_buffer.pvt.horizontal_accuracy / 10);
         gpsSol.epv = gpsConstrainEPE(_buffer.pvt.vertical_accuracy / 10);
@@ -619,7 +629,9 @@ static bool gpsParseFrameUBLOX(void)
             gpsSol.time.millis = _buffer.pvt.nano / (1000*1000);
 
             gpsSol.flags.validTime = true;
+#ifdef VGPS
             vGpsAtGpsTimeUpdate(); // callback per time update to sync gps time and mcu time 
+#endif
         } else {
             gpsSol.flags.validTime = false;
         }
@@ -689,7 +701,7 @@ static bool gpsParseFrameUBLOX(void)
         return false;
     }
 
-#if FAKE_GPS // if set to 1 - after each gps real packet - force fake values in the same timing 
+#if defined(VGPS) && FAKE_GPS // if set to 1 - after each gps real packet - force fake values in the same timing 
     vGpsFake();
 #endif
 

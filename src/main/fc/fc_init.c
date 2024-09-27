@@ -209,8 +209,10 @@ void init(void)
     // initialize IO (needed for all IO operations)
     IOInitGlobal();
 
+#ifdef VGPS
     // init 
     vGpsInit();
+#endif
 
 #ifdef USE_HARDWARE_REVISION_DETECTION
     detectHardwareRevision();

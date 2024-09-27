@@ -250,6 +250,7 @@ navigationPosControl_t posControl;
 navSystemStatus_t NAV_Status;
 static bool landingDetectorIsActive;
 
+#ifdef VGPS
 // print waypoint data for debug purposes to the cli 
 void vGpsNavPrint(void)
 {
@@ -276,6 +277,7 @@ void vGpsNavPrint(void)
         posControl.activeWaypoint.heading,
         posControl.activeWaypointIndex );
 }
+#endif
 
 EXTENDED_FASTRAM multicopterPosXyCoefficients_t multicopterPosXyCoefficients;
 
@@ -1219,8 +1221,10 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_IDLE(navigationFSMState
 {
     UNUSED(previousState);
 
+#ifdef VGPS
     // when entering idle state it means that a mission has ended. vgps perfroms cleanups and re-enable real gps 
     vGpsAtMissionEnd();
+#endif
 
     resetAltitudeController(false);
     resetHeadingController();
@@ -1871,8 +1875,10 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_WAYPOINT_INITIALIZE(nav
         posControl.wpMissionRestart = navConfig()->general.flags.waypoint_mission_restart == WP_MISSION_START;
     }
 
+#ifdef VGPS
     // when starting a new mission this vgps callback evaluates the mission and gets ready (enable if 1st wp is vgps) 
     vGpsAtMissionStart();
+#endif
 
     return NAV_FSM_EVENT_SUCCESS;   // will switch to NAV_STATE_WAYPOINT_PRE_ACTION
 }
@@ -2006,8 +2012,10 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_WAYPOINT_REACHED(naviga
         posControl.wpAltitudeReached = isWaypointAltitudeReached();
     }
 
+#ifdef VGPS
     // whenever reaching a waypoint - vgps performs actions such as force heading, set speed etc. 
     vGpsAtWaypointReached(posControl.activeWaypointIndex);
+#endif
 
     switch ((navWaypointActions_e)posControl.waypointList[posControl.activeWaypointIndex].action) {
         case NAV_WP_ACTION_WAYPOINT:
@@ -2101,8 +2109,10 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_WAYPOINT_NEXT(navigatio
 {
     UNUSED(previousState);
 
+#ifdef VGPS
     // whenever leaving a waypoint vgps is called to tasks such as enabling position update per groud speed, etc. 
     vGpsAtWaypointNext(posControl.activeWaypointIndex);
+#endif
 
     if (isLastMissionWaypoint()) {      // Last waypoint reached
         return NAV_FSM_EVENT_SWITCH_TO_WAYPOINT_FINISHED;
@@ -2126,8 +2136,10 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_WAYPOINT_FINISHED(navig
         return NAV_FSM_EVENT_SWITCH_TO_EMERGENCY_LANDING;
     }
 
+#ifdef VGPS
     // when enading the mission vgps does the same cleanups as done when entering idle state above 
     vGpsAtMissionEnd();
+#endif
 
     return NAV_FSM_EVENT_NONE;      // will re-process state in >10ms
 }
@@ -2518,7 +2530,7 @@ static navigationFSMState_t navSetNewFSMState(navigationFSMState_t newState)
 
 static void navProcessFSMEvents(navigationFSMEvent_t injectedEvent)
 {
-#if BLACKBOX_USING_DEBUG // record nav events 
+#if defined(VGPS) && BLACKBOX_USING_DEBUG // record nav events 
     DEBUG_SET(DEBUG_VGPS, DEBUG_VGPS_EVENT, injectedEvent );
 #endif
 
@@ -2925,13 +2937,13 @@ static bool isWaypointReached(const fpVector3_t * waypointPos, const int32_t * w
         }
     }
 
+#ifdef VGPS
     // in vGps force 5cm sicne we all virtual so error is jsut related to calculation error 
     if ( vGpsIsActive() ) {
         return posControl.wpDistance <= 5.0;
     }
-    else {
-        return posControl.wpDistance <= (navConfig()->general.waypoint_radius);
-    }
+ #endif
+    return posControl.wpDistance <= (navConfig()->general.waypoint_radius);
 }
 
 bool isWaypointAltitudeReached(void)
@@ -4036,10 +4048,12 @@ bool loadNonVolatileWaypointList(bool clearIfLoaded)
         resetWaypointList();
     }
 
+#ifdef VGPS
     // getting into vgps occurs only through saving mission on non vvolatile memory and now loading it + finding the triggering wp inside 
     if ( posControl.waypointListValid ) {
         vGpsAtWpLoad();
     }
+#endif
 
     return posControl.waypointListValid;
 }
@@ -4149,13 +4163,15 @@ float getActiveSpeed(void)
 {
     /* Currently only applicable for multicopter */
 
-    // in vGps ignore global config and do what the waypoint are set to do 
+#ifdef VGPS
+   // in vGps ignore global config and do what the waypoint are set to do 
     if ( vGpsIsActive() ) {
         if(posControl.waypointList[posControl.activeWaypointIndex].action == NAV_WP_ACTION_HOLD_TIME)
             return posControl.waypointList[posControl.activeWaypointIndex].p2; // P1 is hold time
         else
             return posControl.waypointList[posControl.activeWaypointIndex].p1; // default case
     }
+#endif
 
     // Speed limit for modes where speed manually controlled
     if (posControl.flags.isAdjustingPosition || FLIGHT_MODE(NAV_COURSE_HOLD_MODE)) {
@@ -4638,8 +4654,12 @@ navArmingBlocker_e navigationIsBlockingArming(bool *usedBypass)
     }
 
     // Don't allow arming if first waypoint is farther than configured safe distance
+#ifdef VGPS
     if ((posControl.waypointCount > 0) && (navConfig()->general.waypoint_safe_distance != 0) && 
-         !vGpsIsConfig() ) { // do apply waypoint_safe_distance rule if first wp is VGPS 
+         !vGpsIsConfig() ) { // do apply waypoint_safe_distance rule if first wp is VGPS
+#else
+    if ((posControl.waypointCount > 0) && (navConfig()->general.waypoint_safe_distance != 0) ) { 
+#endif
         if (distanceToFirstWP() > METERS_TO_CENTIMETERS(navConfig()->general.waypoint_safe_distance) && !checkStickPosition(YAW_HI)) {
             return NAV_ARMING_BLOCKER_FIRST_WAYPOINT_TOO_FAR;
         }

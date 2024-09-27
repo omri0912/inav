@@ -1555,6 +1555,7 @@ static void writeGPSFrame(timeUs_t currentTimeUs)
         blackboxWriteUnsignedVB(currentTimeUs - blackboxHistory[1]->time);
     }
 
+#ifdef VGPS
     extern gpsSolutionData_t vGpsSol; // this one is fed with real gps data during vgps 
 #if 1
     blackboxWriteUnsignedVB(vGpsSol.llh.lon);
@@ -1586,6 +1587,19 @@ static void writeGPSFrame(timeUs_t currentTimeUs)
         posControl.activeWaypointIndex, // index of current wp 
         (int16_t)(posControl.wpDistance) }; // distance to current wp 
     blackboxWriteSigned16VBArray(x, XYZ_AXIS_COUNT);
+#else
+    blackboxWriteUnsignedVB(gpsSol.fixType);
+    blackboxWriteUnsignedVB(gpsSol.numSat);
+    blackboxWriteSignedVB(gpsSol.llh.lat - gpsHistory.GPS_home[0]);
+    blackboxWriteSignedVB(gpsSol.llh.lon - gpsHistory.GPS_home[1]);
+    blackboxWriteSignedVB(gpsSol.llh.alt / 100); // meters
+    blackboxWriteUnsignedVB(gpsSol.groundSpeed);
+    blackboxWriteUnsignedVB(gpsSol.groundCourse);
+    blackboxWriteUnsignedVB(gpsSol.hdop);
+    blackboxWriteUnsignedVB(gpsSol.eph);
+    blackboxWriteUnsignedVB(gpsSol.epv);
+    blackboxWriteSigned16VBArray(gpsSol.velNED, XYZ_AXIS_COUNT);
+#endif
 
     gpsHistory.GPS_numSat = gpsSol.numSat;
     gpsHistory.GPS_coord[0] = gpsSol.llh.lat;
