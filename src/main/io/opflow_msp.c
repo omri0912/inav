@@ -84,25 +84,22 @@ static float mspCalcFactor(int32_t usec, int32_t rangeMm)
     float factor = ((float)usec * // delta in microseconds 
                     (float)rangeMm * // distance of the OPFLOW from the surfface in mm (this translates pixels later)
                     (float)0.76772807007083) // tan(radians(42/2))*2 where 42 is the point of view of the sensor in degrees 
-                    / (float)30000000.0; // 30 pixels resolution * 10E6 to match the microseconds resolution of "usec" and get a value in seconds 
+                    / (float)300000.0; // 30 pixels resolution * 10E4 to match the microseconds in 100hz and get a value in seconds 
     return factor;
 }
 
-static float mspPixels2Mm( int32_t pixelsPerSec, int32_t usec, int32_t rangeMm)
+static float pixelsPerSec2mmDelta( int32_t pixelsPerSec, int32_t usec, int32_t rangeMm)
 {
-    // calc delta pixels x 1000 
-    float pixels = (float)pixelsPerSec * (float)usec / (float)1000.0; // omri-todo - why times 100 ??? 
-
     // calc mm factor assuming 42 degrees field view 
     float factor = mspCalcFactor(usec,rangeMm);
 
     // convert the delta in pixels to delta in cm     
-    return pixels * factor;
+    return pixelsPerSec * factor;
 }
 
-// deltaRangeMm is the delta in the range finder during the past usec time 
-// deltaRangeMm is convertedto pixels and is actually delta in the x axis in case the point of view was top/down 
-static float mspMm2Pixels( int32_t usec, int32_t deltaRangeMm)
+// mmDelta is the delta in the range finder during the past usec time 
+// mmDelta is convertedto pixels and is actually delta in the x axis in case the point of view was top/down 
+static float mm2pixelsPerSec( int32_t usec, int32_t mmDelta)
 {
     // the distance the virtual range finder believes it sees (it is actually the accumulation of dx from the OPFLOW)
     int32_t mspRangefinderGetDistanceLast(void);
@@ -115,14 +112,13 @@ static float mspMm2Pixels( int32_t usec, int32_t deltaRangeMm)
     float factor = mspCalcFactor(usec,virtualDistanceMm);
 
     // convert from mm to pixels for given usec interval 
-    float pixels = deltaRangeMm / factor;
+    float pixels = mmDelta / factor;
 
     // convert from usec to sec and get pixels per sec 
-    float pixelsPerSec = pixels * (float)10000.0 / (float)usec; 
+    float pixelsPerSec = pixels * (float)1000000.0 / (float)usec; 
     return pixelsPerSec;
 }
 
-timeDelta_t deltaTimeOmri = 0; // Integration timeframe of motionX/Y
 void rangefinderSyncOpflow(int32_t zFromRangeFinder)
 {
     const timeUs_t currentTimeUs = micros(); // real time 
@@ -130,9 +126,8 @@ void rangefinderSyncOpflow(int32_t zFromRangeFinder)
         int32_t dt = currentTimeUs - rangeFinderLastTimeUsec;
         int32_t dz = zFromRangeFinder - rangeFinderLastValueMm;
         //sensorData.deltaTime = dt; // currentTimeUs - updatedTimeUs; // detla time in usec 
-        deltaTimeOmri = dt;      // Integration timeframe of motionX/Y
-        float pixelsPerSec = mspMm2Pixels( dt, dz );
-        sensorData.flowRateRaw[1] = -pixelsPerSec; 
+        float pixelsPerSec = mm2pixelsPerSec( dt, dz );
+        sensorData.flowRateRaw[1] = -pixelsPerSec/100;  // convert to pixels per 100hz/10ms 
         hasNewData = true; // let the module know new data is pending 
 
         static int32_t omri_remove_me1 = 0;
@@ -162,9 +157,9 @@ void mspOpflowReceiveNewData(uint8_t * bufferPtr)
 #ifdef VERTICAL_OPFLOW // inform the range finder that we have a new y value (used as z)
     if ( rangeFinderLastValueMm >= 0 && currentTimeUs > updatedTimeUs ) {
         // convert motionX (speed in cm/sec) to dx in mm - dividve by 10E6 to get micros and multiple by 10 for mm --> 10E5  
-        float changeMm = mspPixels2Mm(pkt->motionY, sensorData.deltaTime, rangeFinderLastValueMm);
+        float mmDelta = pixelsPerSec2mmDelta(pkt->motionY, sensorData.deltaTime, rangeFinderLastValueMm);
         void opflowSyncRangefinder(float dMm);
-        opflowSyncRangefinder(-changeMm);
+        opflowSyncRangefinder(-mmDelta);
         sensorData.flowRateRaw[0] = pkt->motionX;
 //        DEBUG_SET(DEBUG_FLOW_RAW, 1, pkt->motionY);
         sensorData.flowRateRaw[2] = 0;
@@ -174,16 +169,29 @@ void mspOpflowReceiveNewData(uint8_t * bufferPtr)
 #ifdef VERTICAL_OPFLOW_DEMO
         static float VERTICAL_OPFLOW_DEMO_x = 0.0;
         static float VERTICAL_OPFLOW_DEMO_y = 0.0;
-        VERTICAL_OPFLOW_DEMO_y += (changeMm * (float)sensorData.deltaTime / 100000.0);
-        changeMm = mspPixels2Mm(pkt->motionX, sensorData.deltaTime, rangeFinderLastValueMm);
-        VERTICAL_OPFLOW_DEMO_x += (changeMm * (float)sensorData.deltaTime / 100000.0);
+        static float VERTICAL_OPFLOW_DEMO_x1 = 0;
+        static float VERTICAL_OPFLOW_DEMO_y1 = 0;
+
+        // assume motionX is in pixels per 100hz --> pixels per 10ms --> looks good 
+        VERTICAL_OPFLOW_DEMO_x1 += ((float)pkt->motionX * (float)sensorData.deltaTime / (float)10000.0);
+        VERTICAL_OPFLOW_DEMO_y1 += ((float)pkt->motionY * (float)sensorData.deltaTime / (float)10000.0);
+        VERTICAL_OPFLOW_DEMO_y += mmDelta/10.0;
+        mmDelta = pixelsPerSec2mmDelta(pkt->motionX, sensorData.deltaTime, rangeFinderLastValueMm);
+        VERTICAL_OPFLOW_DEMO_x += (mmDelta/10.0);
         DEBUG_SET(DEBUG_FLOW, 3, VERTICAL_OPFLOW_DEMO_x);
         DEBUG_SET(DEBUG_FLOW, 4, VERTICAL_OPFLOW_DEMO_y);
+        DEBUG_SET(DEBUG_FLOW, 6, VERTICAL_OPFLOW_DEMO_x1);
+        DEBUG_SET(DEBUG_FLOW, 7, VERTICAL_OPFLOW_DEMO_y1);
+
+        if ( VERTICAL_OPFLOW_DEMO_x > 100 || VERTICAL_OPFLOW_DEMO_x < -100 ) VERTICAL_OPFLOW_DEMO_x = 0;
+        if ( VERTICAL_OPFLOW_DEMO_y > 100 || VERTICAL_OPFLOW_DEMO_y < -100 ) VERTICAL_OPFLOW_DEMO_y = 0;
+        if ( VERTICAL_OPFLOW_DEMO_x1 > 10000 || VERTICAL_OPFLOW_DEMO_x1 < -10000 ) VERTICAL_OPFLOW_DEMO_x1 = 0;
+        if ( VERTICAL_OPFLOW_DEMO_y1 > 10000 || VERTICAL_OPFLOW_DEMO_y1 < -10000 ) VERTICAL_OPFLOW_DEMO_y1 = 0;
 #endif    
 
 //        DEBUG_SET(DEBUG_FLOW_RAW, 0, rangeFinderLastValueMm);
 //        DEBUG_SET(DEBUG_FLOW_RAW, 2, sensorData.deltaTime);
-//        DEBUG_SET(DEBUG_FLOW_RAW, 3, ((int32_t)changeMm) );
+//        DEBUG_SET(DEBUG_FLOW_RAW, 3, ((int32_t)mmDelta) );
         //extern float sensorDataF; 
         //DEBUG_SET(DEBUG_FLOW_RAW, 4, ((int32_t)(sensorDataF+0.5)) );
     }
