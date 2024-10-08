@@ -206,14 +206,16 @@ void opflowUpdate(timeUs_t currentTimeUs)
 
         // If quality of the flow from the sensor is good - process further
         if (opflow.flowQuality == OPFLOW_QUALITY_VALID) {
-            const float integralToRateScaler = 100.0 / (float)opticalFlowConfig()->opflow_scale;
+            const float integralToRateScaler = (opticalFlowConfig()->opflow_scale > 0.01f) ? (1.0e6f / opflow.dev.rawData.deltaTime) / (float)opticalFlowConfig()->opflow_scale : 0.0f;
+
             // Apply sensor alignment
             applySensorAlignment(opflow.dev.rawData.flowRateRaw, opflow.dev.rawData.flowRateRaw, opticalFlowConfig()->opflow_align);
 
             // Calculate flow rate and accumulated body rate
             opflow.flowRate[X] = opflow.dev.rawData.flowRateRaw[X] * integralToRateScaler;
 #ifdef VERTICAL_OPFLOW
-            const float integralToRateScalerY = 100.0 / (float)opticalFlowConfig()->opflow_scale;
+            extern timeDelta_t deltaTimeOmri;      // Integration timeframe of motionX/Y
+            const float integralToRateScalerY = (opticalFlowConfig()->opflow_scale > 0.01f) ? (1.0e6f / deltaTimeOmri) / (float)opticalFlowConfig()->opflow_scale : 0.0f;
             opflow.flowRate[Y] = opflow.dev.rawData.flowRateRaw[Y] * integralToRateScalerY;
 #else
             opflow.flowRate[Y] = opflow.dev.rawData.flowRateRaw[Y] * integralToRateScaler;
@@ -242,8 +244,9 @@ void opflowUpdate(timeUs_t currentTimeUs)
             }
             else if (opflow.flowQuality == OPFLOW_QUALITY_VALID) {
                 // Ongoing calibration - accumulate body and flow rotation magniture if opflow quality is good enough
+                const float invDt = 1.0e6 / opflow.dev.rawData.deltaTime;
                 opflowCalibrationBodyAcc += calc_length_pythagorean_2D(opflow.bodyRate[X], opflow.bodyRate[Y]);
-                opflowCalibrationFlowAcc += calc_length_pythagorean_2D(opflow.dev.rawData.flowRateRaw[X], opflow.dev.rawData.flowRateRaw[Y]) * 100.0;
+                opflowCalibrationFlowAcc += calc_length_pythagorean_2D(opflow.dev.rawData.flowRateRaw[X], opflow.dev.rawData.flowRateRaw[Y]) * invDt;
             }
         }
 
