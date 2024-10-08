@@ -50,7 +50,8 @@ static bool hasNewData = false;
 static timeUs_t updatedTimeUs = 0;
 #ifdef VERTICAL_OPFLOW // define this to get callback whenever the range finder is updated 
 static int32_t rangeFinderLastValueMm = -1;
-static timeUs_t rangeFinderLastTimeUsec = 0;
+static timeUs_t updatedTimeUsY = 0;
+static timeDelta_t deltaTimeY = 0; // Integration timeframe of motionX/Y
 #endif
 static opflowData_t sensorData = { 0 };
 
@@ -78,28 +79,36 @@ static bool mspOpflowUpdate(opflowData_t * data)
 
 #ifdef VERTICAL_OPFLOW // define this to get callback whenever the range finder is updated 
 
-// return milimetric multiplier 
-static float mspCalcFactor(int32_t usec, int32_t rangeMm)
-{
-    float factor = ((float)usec * // delta in microseconds 
-                    (float)rangeMm * // distance of the OPFLOW from the surfface in mm (this translates pixels later)
-                    (float)0.76772807007083) // tan(radians(42/2))*2 where 42 is the point of view of the sensor in degrees 
-                    / (float)300000.0; // 30 pixels resolution * 10E4 to match the microseconds in 100hz and get a value in seconds 
-    return factor;
-}
+#define PIXELS 30 // 30 x 30 
+#define MUL_FACTOR ((float)0.0255909356690277*(float)30.0/(float)PIXELS)
 
-static float pixelsPerSec2mmDelta( int32_t pixelsPer10msec, int32_t usec, int32_t rangeMm)
-{
-    // calc mm factor assuming 42 degrees field view 
-    float factor = mspCalcFactor(usec,rangeMm);
+#define CRAZY_FACTOR 
 
-    // convert the delta in pixels to delta in cm     
-    return pixelsPer10msec * factor;
+static float pixelsPerSec2mmDelta( int32_t deltaPixelsPer10msec, int32_t intervalUSec, int32_t rangeMm)
+{
+    // how many pixels shift we got during intervalUSec 
+    float deltaPixelsPerIntervalUSec = (float)deltaPixelsPer10msec / 10000.0 * (float)intervalUSec;
+
+    // how many mm shift we got during intervalUSec
+    float expectedMmDelta = (deltaPixelsPerIntervalUSec * (float)rangeMm * MUL_FACTOR); // 0.0255909356690277 = 2*tan(radians(42/2))/30
+
+#ifdef CRAZY_FACTOR 
+    // divide the result be value between 4 and 12 
+    float mmDelta = expectedMmDelta / 4.0; 
+    if ( rangeMm > 100 ) {
+        float div2 = 1.0 + (float)(rangeMm - 100)/1100.0; 
+        mmDelta /= div2;
+    }
+
+    return mmDelta;
+#else
+    return expectedMmDelta;
+#endif    
 }
 
 // mmDelta is the delta in the range finder during the past usec time 
 // mmDelta is convertedto pixels and is actually delta in the x axis in case the point of view was top/down 
-static float mm2pixels( int32_t usec, int32_t mmDelta)
+static float mm2pixels(int32_t mmDelta)
 {
     // the distance the virtual range finder believes it sees (it is actually the accumulation of dx from the OPFLOW)
     int32_t mspRangefinderGetDistanceLast(void);
@@ -109,28 +118,33 @@ static float mm2pixels( int32_t usec, int32_t mmDelta)
     }
 
     // calc mm factor assuming 42 degrees field view 
-    float factor = mspCalcFactor(usec,virtualDistanceMm);
+    float expPixels = (float)mmDelta / (float)virtualDistanceMm / MUL_FACTOR; // distance of the OPFLOW from the surfface in mm (this translates pixels later)
 
-    // convert from mm to pixels for given usec interval 
-    float pixels = mmDelta / factor;
+#ifdef CRAZY_FACTOR 
+    // divide the result be value between 4 and 12 
+    float pixels = expPixels * 4.0; 
+    if ( virtualDistanceMm > 100 ) {
+        float div2 = 1.0 + (float)(virtualDistanceMm - 100)/1100.0; 
+        pixels *= div2;
+    }
+
     return pixels;
+#else
+    return expPixels;
+#endif    
 }
 
-timeDelta_t deltaTimeOmri = 0; // Integration timeframe of motionX/Y
 void rangefinderSyncOpflow(int32_t zFromRangeFinder)
 {
     const timeUs_t currentTimeUs = micros(); // real time 
-    if ( rangeFinderLastValueMm >= 0 && currentTimeUs > rangeFinderLastTimeUsec ) {
-        int32_t dt = currentTimeUs - rangeFinderLastTimeUsec;
+    if ( rangeFinderLastValueMm >= 0 && currentTimeUs > updatedTimeUsY ) {
+        deltaTimeY = currentTimeUs - updatedTimeUsY;
         int32_t dz = zFromRangeFinder - rangeFinderLastValueMm;
-        //sensorData.deltaTime = dt; // currentTimeUs - updatedTimeUs; // detla time in usec 
-        deltaTimeOmri = dt;      // Integration timeframe of motionX/Y
-        float pixels = mm2pixels( dt, dz );
+        float pixels = mm2pixels(dz);
         sensorData.flowRateRaw[1] = -pixels; 
-        hasNewData = true; // let the module know new data is pending 
     }
     rangeFinderLastValueMm = zFromRangeFinder;
-    rangeFinderLastTimeUsec = updatedTimeUs = currentTimeUs; // save time for next round 
+    updatedTimeUsY = currentTimeUs; // save time for next round 
 }
 #endif
 
@@ -148,14 +162,24 @@ void mspOpflowReceiveNewData(uint8_t * bufferPtr)
         void opflowSyncRangefinder(float dMm);
         opflowSyncRangefinder(-mmDelta);
         sensorData.flowRateRaw[0] = pkt->motionX;
+        if ( deltaTimeY > 0 ) { // sync to same time base 
+            sensorData.flowRateRaw[1] *= (sensorData.deltaTime/deltaTimeY); 
+        }
         sensorData.flowRateRaw[2] = 0;
         sensorData.quality = (int)pkt->quality * 100 / 255;
         hasNewData = true;
-
 #ifdef VERTICAL_OPFLOW_DEMO
         // cm 
+
         static float cm_accumulated_y = 0.0;
         cm_accumulated_y += mmDelta/10.0;
+
+        DEBUG_SET(DEBUG_FLOW_RAW, 0, pkt->motionY);
+        DEBUG_SET(DEBUG_FLOW_RAW, 1, sensorData.deltaTime);
+        DEBUG_SET(DEBUG_FLOW_RAW, 2, rangeFinderLastValueMm);
+        DEBUG_SET(DEBUG_FLOW_RAW, 3, (mmDelta*100.0));
+        DEBUG_SET(DEBUG_FLOW_RAW, 4, cm_accumulated_y);
+
         DEBUG_SET(DEBUG_FLOW, 4, cm_accumulated_y);
         static float cm_accumulated_x = 0.0;
         mmDelta = pixelsPerSec2mmDelta(pkt->motionX, sensorData.deltaTime, rangeFinderLastValueMm);
@@ -187,4 +211,61 @@ virtualOpflowVTable_t opflowMSPVtable = {
     .init = mspOpflowInit,
     .update = mspOpflowUpdate
 };
+#if 0
+void all_in_one()
+{
+    // opflow.bodyRate = accumulated DPS during opflow.dev.rawData.deltaTime microseconds 
+    // opflow.flowRate = accumulated pixels shift during opflow.dev.rawData.deltaTime microseconds 
+    // (float)opticalFlowConfig()->opflow_scale is usually 5.4 
+
+    const float integralToRateScaler = (1.0e6f / opflow.dev.rawData.deltaTime) / (float)opticalFlowConfig()->opflow_scale;
+
+    // Calculate flow rate and accumulated body rate
+    opflow.flowRate[X] = opflow.dev.rawData.flowRateRaw[X] * integralToRateScaler;
+    opflow.flowRate[Y] = opflow.dev.rawData.flowRateRaw[Y] * integralToRateScaler;
+
+    opflow.bodyRate[X] = DEGREES_TO_RADIANS(opflow.bodyRate[X]);
+    opflow.bodyRate[Y] = DEGREES_TO_RADIANS(opflow.bodyRate[Y]);
+    opflow.flowRate[X] = DEGREES_TO_RADIANS(opflow.flowRate[X]);
+    opflow.flowRate[Y] = DEGREES_TO_RADIANS(opflow.flowRate[Y]);
+
+    // Calculate linear velocity based on angular velocity and altitude
+    // Technically we should calculate arc length here, but for fast sampling this is accurate enough
+    fpVector3_t flowVel = {
+        .x = - (opflow.flowRate[Y] - opflow.bodyRate[Y]) * posEstimator.surface.alt,
+        .y =   (opflow.flowRate[X] - opflow.bodyRate[X]) * posEstimator.surface.alt,
+        .z =    posEstimator.est.vel.z
+    };
+
+    // From body frame to earth frame
+    typedef struct {
+        float q0, q1, q2, q3;
+    } fpQuaternion_t;
+    extern FASTRAM fpQuaternion_t orientation;
+    quaternionRotateVectorInv(&flowVel, &flowVel, &orientation);
+
+    // HACK: This is needed to correctly transform from NED (sensor frame) to NEU (navigation)
+    flowVel.y = -flowVel.y;
+
+    // At this point flowVel will hold linear velocities in earth frame
+
+    // Calculate velocity correction
+    const float flowVelXInnov = flowVel.x - posEstimator.est.vel.x;
+    const float flowVelYInnov = flowVel.y - posEstimator.est.vel.y;
+
+    ctx->estVelCorr.x = flowVelXInnov * positionEstimationConfig()->w_xy_flow_v * ctx->dt;
+    ctx->estVelCorr.y = flowVelYInnov * positionEstimationConfig()->w_xy_flow_v * ctx->dt;
+
+    posEstimator.est.flowCoordinates[X] += flowVel.x * ctx->dt;
+    posEstimator.est.flowCoordinates[Y] += flowVel.y * ctx->dt;
+
+    const float flowResidualX = posEstimator.est.flowCoordinates[X] - posEstimator.est.pos.x;
+    const float flowResidualY = posEstimator.est.flowCoordinates[Y] - posEstimator.est.pos.y;
+
+    ctx->estPosCorr.x = flowResidualX * positionEstimationConfig()->w_xy_flow_p * ctx->dt;
+    ctx->estPosCorr.y = flowResidualY * positionEstimationConfig()->w_xy_flow_p * ctx->dt;
+
+    ctx->newEPH = updateEPE(posEstimator.est.eph, ctx->dt, calc_length_pythagorean_2D(flowResidualX, flowResidualY), positionEstimationConfig()->w_xy_flow_p);
+}
+#endif
 #endif

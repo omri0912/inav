@@ -94,7 +94,7 @@ void opflowSyncRangefinder(float dMm)
     }
 
     // note - here we also convert from mm to cm 
-    sensorData = 20 + (int32_t)(sensorDataF+0.5)/10; // assume 1m AGL as init value 1m=100mm 
+    sensorData = 20 + (int32_t)(sensorDataF/10.0+0.5); // assume 0.2m AGL as init value 1m=100mm 
 //    DEBUG_SET(DEBUG_FLOW, 5, sensorData);
     hasNewData = true;
 }

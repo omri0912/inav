@@ -40,6 +40,7 @@
 
 #include "sensors/rangefinder.h"
 #include "sensors/barometer.h"
+#include "flyz.h"
 
 extern navigationPosEstimator_t posEstimator;
 
@@ -56,6 +57,11 @@ void updatePositionEstimator_SurfaceTopic(timeUs_t currentTimeUs, float newSurfa
 
     posEstimator.surface.lastUpdateTime = currentTimeUs;
 
+#ifdef VERTICAL_OPFLOW_DIRECT
+    posEstimator.surface.alt = 100.0; // 1meter 
+    newReliabilityMeasurement = 1.0f;
+    surfaceMeasurementWithinRange = true;
+#else
     if (newSurfaceAlt >= 0) {
         if (newSurfaceAlt <= positionEstimationConfig()->max_surface_altitude) {
             newReliabilityMeasurement = 1.0f;
@@ -70,6 +76,7 @@ void updatePositionEstimator_SurfaceTopic(timeUs_t currentTimeUs, float newSurfa
         // Negative values - out of range or failed hardware
         newReliabilityMeasurement = 0.0f;
     }
+#endif
 
     /* Reliability is a measure of confidence of rangefinder measurement. It's increased with each valid sample and decreased with each invalid sample */
     if (surfaceDtUs > MS2US(INAV_SURFACE_TIMEOUT_MS)) {

@@ -64,16 +64,6 @@ void updatePositionEstimator_OpticalFlowTopic(timeUs_t currentTimeUs)
 bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
 {
 #if defined(USE_RANGEFINDER) && defined(USE_OPFLOW)
-    if (!((ctx->newFlags & EST_FLOW_VALID) && (ctx->newFlags & EST_SURFACE_VALID) && (ctx->newFlags & EST_Z_VALID))) {
-        return false;
-    }
-
-    // FIXME: flow may use AGL estimate if available
-    const bool canUseFlow = (posEstimator.surface.reliability >= RANGEFINDER_RELIABILITY_LOW_THRESHOLD);
-
-    if (!canUseFlow) {
-        return false;
-    }
 
 #ifdef VERTICAL_OPFLOW_DEMO
     static float  x = 0.0;
@@ -85,12 +75,30 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
     DEBUG_SET(DEBUG_FLOW, 2, posEstimator.surface.alt);
 #endif
 
+
+    if (!((ctx->newFlags & EST_FLOW_VALID) && (ctx->newFlags & EST_SURFACE_VALID) && (ctx->newFlags & EST_Z_VALID))) {
+        return false;
+    }
+
+    // FIXME: flow may use AGL estimate if available
+    const bool canUseFlow = (posEstimator.surface.reliability >= RANGEFINDER_RELIABILITY_LOW_THRESHOLD);
+
+    if (!canUseFlow) {
+        return false;
+    }
+
     // Calculate linear velocity based on angular velocity and altitude
     // Technically we should calculate arc length here, but for fast sampling this is accurate enough
     fpVector3_t flowVel = {
+#ifdef VERTICAL_OPFLOW_DIRECT
+        .x = - (posEstimator.flow.flowRate[Y] - posEstimator.flow.bodyRate[Y]) * posEstimator.surface.alt,
+        .z =   (posEstimator.flow.flowRate[X] - posEstimator.flow.bodyRate[X]) * posEstimator.surface.alt,
+        .y =    posEstimator.est.vel.z
+#else        
         .x = - (posEstimator.flow.flowRate[Y] - posEstimator.flow.bodyRate[Y]) * posEstimator.surface.alt,
         .y =   (posEstimator.flow.flowRate[X] - posEstimator.flow.bodyRate[X]) * posEstimator.surface.alt,
         .z =    posEstimator.est.vel.z
+#endif        
     };
 
     // At this point flowVel will hold linear velocities in earth frame
