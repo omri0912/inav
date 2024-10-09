@@ -167,6 +167,10 @@ void opflowStartCalibration(void)
  */
 void opflowUpdate(timeUs_t currentTimeUs)
 {
+#ifdef USE_OPFLOW_MICOLINK
+    opflow.isHwHealty = true;
+    opflow.lastValidUpdate = currentTimeUs;
+#else
     if (!opflow.dev.updateFn)
         return;
 
@@ -269,6 +273,7 @@ void opflowUpdate(timeUs_t currentTimeUs)
             opflowZeroBodyGyroAcc();
         }
     }
+#endif // ifndef USE_OPFLOW_MICOLINK
 }
 
 /* Run a simple gyro update integrator to estimate average body rate between two optical flow updates */

@@ -37,6 +37,8 @@
 #include "msp/msp.h"
 #include "msp/msp_serial.h"
 
+#include "flyz.h"
+
 static mspPort_t mspPorts[MAX_MSP_PORT_COUNT];
 
 
@@ -471,6 +473,12 @@ void mspSerialProcessOnePort(mspPort_t * const mspPort, mspEvaluateNonMspData_e 
         while (serialRxBytesWaiting(mspPort->port)) {
             const uint8_t c = serialRead(mspPort->port);
             const bool consumed = mspSerialProcessReceivedData(mspPort, c);
+
+#ifdef USE_OPFLOW_MICOLINK
+            // listen to all configured ports and in case micolink packet - digest it 
+            void micolink_decode(uint8_t data);
+            micolink_decode(c);
+#endif
 
             if (!consumed && evaluateNonMspData == MSP_EVALUATE_NON_MSP_DATA) {
                 mspEvaluateNonMspData(mspPort, c);

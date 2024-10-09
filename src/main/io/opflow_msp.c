@@ -37,6 +37,273 @@
 
 #include "io/serial.h"
 
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#ifdef USE_OPFLOW_MICOLINK
+
+#include <string.h>
+#include "flight/imu.h"
+
+#define MICOLINK_MSG_HEAD            0xEF
+#define MICOLINK_MAX_PAYLOAD_LEN     64
+#define MICOLINK_MAX_LEN             MICOLINK_MAX_PAYLOAD_LEN + 7
+#define MICOLINK_MSG_ID_RANGE_SENSOR 0x51 // Range Sensor
+
+// Message Structure Definition
+typedef struct
+{
+    uint8_t head;                      
+    uint8_t dev_id;                          
+    uint8_t sys_id;						
+    uint8_t msg_id;                        
+    uint8_t seq;                          
+    uint8_t len;                               
+    uint8_t payload[MICOLINK_MAX_PAYLOAD_LEN]; 
+    uint8_t checksum;                          
+
+    uint8_t status;                           
+    uint8_t payload_cnt;                       
+} MICOLINK_MSG_t;
+
+// Payload Definition
+#pragma pack (1)
+typedef struct
+{
+    uint32_t  time_ms;		    // System time in ms
+    uint32_t  distance;		    // distance(mm), 0 Indicates unavailable
+    uint8_t   strength;	            // signal strength
+    uint8_t   precision;	    // distance precision
+    uint8_t   dis_status;	    // distance status
+    uint8_t  reserved1;	            // reserved
+    int16_t   flow_vel_x;	    // optical flow velocity in x
+    int16_t   flow_vel_y;	    // optical flow velocity in y
+    uint8_t   flow_quality;	    // optical flow quality
+    uint8_t   flow_status;	    // optical flow status
+    uint16_t  reserved2;	    // reserved
+} MICOLINK_PAYLOAD_RANGE_SENSOR_t;
+#pragma pack ()
+
+static MICOLINK_PAYLOAD_RANGE_SENSOR_t mtf_01;
+static float mtf_01_vel_cm_sec[3];
+static float mtf_01_move_cm[3]; 
+static bool mtf_01_is_init = false;
+
+static bool micolink_check_sum(MICOLINK_MSG_t* msg)
+{
+    uint8_t length = msg->len + 6;
+    uint8_t temp[MICOLINK_MAX_LEN];
+    uint8_t checksum = 0;
+
+    memcpy(temp, msg, length);
+
+    for(uint8_t i=0; i<length; i++)
+    {
+        checksum += temp[i];
+    }
+
+    if(checksum == msg->checksum)
+        return true;
+    else
+        return false;
+}
+
+static bool micolink_parse_char(MICOLINK_MSG_t* msg, uint8_t data)
+{
+    switch(msg->status)
+    {
+    case 0:    
+        if(data == MICOLINK_MSG_HEAD)
+        {
+            msg->head = data;
+            msg->status++;
+            msg->payload_cnt = 0;
+        }
+        break;
+        
+    case 1:     // device id
+        if ( data==0x0F ) {
+            msg->dev_id = data;
+            msg->status++;
+        }
+        else msg->status = 0;
+        break;
+    
+    case 2:     // system id
+        if ( data==0 ) {
+            msg->sys_id = data;
+            msg->status++;
+        }
+        else msg->status = 0;
+        break;
+    
+    case 3:     // message id 
+        if ( data==0x51 ) {
+            msg->msg_id = data;
+            msg->status++;
+        }
+        else msg->status = 0;
+        break;
+    
+    case 4:     // 
+        msg->seq = data;
+        msg->status++;
+        break;
+    
+    case 5:     // payload length
+        if ( data==20 ) {
+            msg->len = 20;
+            msg->status++;
+            msg->payload_cnt = 0;
+        }
+        else msg->status = 0;
+        break;
+        
+    case 6:     // payload receive
+        msg->payload[msg->payload_cnt++] = data;
+        if(msg->payload_cnt >= msg->len)
+        {
+            msg->payload_cnt = 0;
+            msg->status++;
+        }
+        break;
+        
+    case 7:     // check sum
+        msg->checksum = data;
+        msg->status = 0;
+        if(micolink_check_sum(msg))
+        {
+            return true;
+        }
+        msg->payload_cnt = 0;
+        break;
+        
+    default:
+        msg->status = 0;
+        msg->payload_cnt = 0;
+        break;
+    }
+
+    return false;
+}
+
+bool mtf_01_is_valid(void)
+{
+    return mtf_01_is_init; // after 2 consecutive good samples 
+}
+
+float mtf_01_get_move_cm(int i)
+{
+    return mtf_01_move_cm[i];
+}
+
+float mtf_01_get_velocity_cm_sec(int i)
+{
+    return mtf_01_vel_cm_sec[i];
+}
+
+void micolink_decode(uint8_t data)
+{
+    static MICOLINK_MSG_t msg;
+
+    if(micolink_parse_char(&msg, data) == false)
+        return;
+    
+    switch(msg.msg_id)
+    {
+        case MICOLINK_MSG_ID_RANGE_SENSOR:
+        {
+            memcpy(&mtf_01, msg.payload, msg.len);
+
+#if 0
+            // "send" msp packet to the rangefinder 
+            void mspRangefinderReceiveNewData(uint8_t * bufferPtr);
+            static mspSensorRangefinderDataMessage_t fake_msp;
+            fake_msp.distanceMm = mtf_01.distance; // mm 
+            fake_msp.quality = mtf_01.strength; // 0-255 
+            mspRangefinderReceiveNewData((uint8_t*)&fake_msp);
+#endif
+
+            static float distnace_prev = 0.0;
+            static uint32_t time_ms_prev = 0;
+
+            // if all valid 
+            if ( mtf_01.dis_status>0 && mtf_01.flow_status>0 ) {
+
+                // if this is the 2nd time all is valid --> we can get delta's 
+                float tilt = calculateCosTiltAngle(); // do pitch angle tilt correction 
+                DEBUG_SET(DEBUG_FLOW_RAW, 7, (tilt*100.0) );
+                float distance_cm = (float)mtf_01.distance / 10.0 * tilt; // do pitch angle tilt correction 
+                static float distance_cm_filtered = 0;
+                
+                distance_cm_filtered = distance_cm * 0.1 + distance_cm_filtered * 0.9;
+                if ( mtf_01_is_init ) {
+
+                    // distance prep 
+                    float distance_factor = (float)mtf_01.distance / 1000.0; // 1000mm <--> 1m
+                    float delta_distance = distance_cm_filtered - distnace_prev;
+
+                    // time prep 
+                    uint32_t dt = mtf_01.time_ms - time_ms_prev;
+                    float time_factor = 1000.0 / (float)dt;
+                    DEBUG_SET(DEBUG_FLOW_RAW, 6, dt );
+
+#ifdef VERTICAL_OPFLOW
+                    // calculate velocities 
+                    mtf_01_vel_cm_sec[0] = (float)mtf_01.flow_vel_x /* cm/sec @1m */ * distance_factor;
+                    mtf_01_vel_cm_sec[1] = (float)-delta_distance * time_factor;
+                    mtf_01_vel_cm_sec[2] = (float)-mtf_01.flow_vel_y /* cm/sec @1m */ * distance_factor;
+#else
+                    // calculate velocities 
+                    mtf_01_vel_cm_sec[0] = (float)mtf_01.flow_vel_x /* cm/sec @1m */ * distance_factor;
+                    mtf_01_vel_cm_sec[1] = (float)mtf_01.flow_vel_y /* cm/sec @1m */ * distance_factor;
+                    mtf_01_vel_cm_sec[2] = (float)delta_distance * time_factor;
+#endif
+
+                    // calcualte distances 
+                    for ( int i=0; i<3; i++ ) {
+                        mtf_01_move_cm[i] += mtf_01_vel_cm_sec[i] / time_factor;
+                    }
+                }
+                else {
+                    distance_cm_filtered = distance_cm;
+                }
+
+                // save for next time 
+                mtf_01_is_init = true;
+                distnace_prev = distance_cm_filtered;
+                time_ms_prev = mtf_01.time_ms;
+            }
+            else {
+                mtf_01_is_init = false; 
+                for ( int i=0; i<3; i++ ) {
+                    mtf_01_move_cm[i] = 0; // NA 
+                }
+            }
+
+            DEBUG_SET(DEBUG_FLOW, 3, mtf_01_move_cm[0]);
+            DEBUG_SET(DEBUG_FLOW, 4, mtf_01_move_cm[1]);
+            DEBUG_SET(DEBUG_FLOW, 5, mtf_01_move_cm[2]);
+
+            DEBUG_SET(DEBUG_FLOW_RAW, 0, mtf_01_vel_cm_sec[0]);
+            DEBUG_SET(DEBUG_FLOW_RAW, 1, mtf_01_vel_cm_sec[1]);
+            DEBUG_SET(DEBUG_FLOW_RAW, 2, mtf_01_vel_cm_sec[2]);
+            DEBUG_SET(DEBUG_FLOW_RAW, 3, mtf_01_move_cm[0]);
+            DEBUG_SET(DEBUG_FLOW_RAW, 4, mtf_01_move_cm[1]);
+            DEBUG_SET(DEBUG_FLOW_RAW, 5, mtf_01_move_cm[2]);
+            break;
+        } 
+
+        default:
+            break;
+        }
+}
+
+#endif // USE_OPFLOW_MICOLINK
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 #if defined(USE_OPFLOW_MSP)
 
 #include "drivers/opflow/opflow_virtual.h"
@@ -174,11 +441,11 @@ void mspOpflowReceiveNewData(uint8_t * bufferPtr)
         static float cm_accumulated_y = 0.0;
         cm_accumulated_y += mmDelta/10.0;
 
-        DEBUG_SET(DEBUG_FLOW_RAW, 0, pkt->motionY);
-        DEBUG_SET(DEBUG_FLOW_RAW, 1, sensorData.deltaTime);
-        DEBUG_SET(DEBUG_FLOW_RAW, 2, rangeFinderLastValueMm);
-        DEBUG_SET(DEBUG_FLOW_RAW, 3, (mmDelta*100.0));
-        DEBUG_SET(DEBUG_FLOW_RAW, 4, cm_accumulated_y);
+        //DEBUG_SET(DEBUG_FLOW_RAW, 0, pkt->motionY);
+        //DEBUG_SET(DEBUG_FLOW_RAW, 1, sensorData.deltaTime);
+        //DEBUG_SET(DEBUG_FLOW_RAW, 2, rangeFinderLastValueMm);
+        //DEBUG_SET(DEBUG_FLOW_RAW, 3, (mmDelta*100.0));
+        //DEBUG_SET(DEBUG_FLOW_RAW, 4, cm_accumulated_y);
 
         DEBUG_SET(DEBUG_FLOW, 4, cm_accumulated_y);
         static float cm_accumulated_x = 0.0;

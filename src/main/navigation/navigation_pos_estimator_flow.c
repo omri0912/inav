@@ -89,17 +89,24 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
 
     // Calculate linear velocity based on angular velocity and altitude
     // Technically we should calculate arc length here, but for fast sampling this is accurate enough
+#if defined(USE_OPFLOW_MICOLINK) 
+    float mtf_01_get_velocity_cm_sec(int i);
     fpVector3_t flowVel = {
-#ifdef VERTICAL_OPFLOW_DIRECT
-        .x = - (posEstimator.flow.flowRate[Y] - posEstimator.flow.bodyRate[Y]) * posEstimator.surface.alt,
-        .z =   (posEstimator.flow.flowRate[X] - posEstimator.flow.bodyRate[X]) * posEstimator.surface.alt,
-        .y =    posEstimator.est.vel.z
+        .x = -mtf_01_get_velocity_cm_sec(1), // -Y 
+        .y =  mtf_01_get_velocity_cm_sec(0), // +X
+        .z =  mtf_01_get_velocity_cm_sec(2)  // +Z
+    };
 #else        
+    fpVector3_t flowVel = {
         .x = - (posEstimator.flow.flowRate[Y] - posEstimator.flow.bodyRate[Y]) * posEstimator.surface.alt,
         .y =   (posEstimator.flow.flowRate[X] - posEstimator.flow.bodyRate[X]) * posEstimator.surface.alt,
         .z =    posEstimator.est.vel.z
-#endif        
     };
+#endif        
+
+    DEBUG_SET(DEBUG_FLOW, 0, flowVel.x);
+    DEBUG_SET(DEBUG_FLOW, 1, flowVel.y);
+    DEBUG_SET(DEBUG_FLOW, 2, flowVel.x);
 
     // At this point flowVel will hold linear velocities in earth frame
     imuTransformVectorBodyToEarth(&flowVel);

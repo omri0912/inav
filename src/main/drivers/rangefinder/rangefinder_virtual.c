@@ -60,7 +60,11 @@ static int32_t virtualRangefinderGetDistance(rangefinderDev_t * dev)
 
 bool virtualRangefinderDetect(rangefinderDev_t * dev, const virtualRangefinderVTable_t * vtable)
 {
+#ifdef USE_OPFLOW_MICOLINK
+    if (vtable) {
+#else        
     if (vtable && vtable->detect()) {
+#endif
         highLevelDeviceVTable = vtable;
 
         dev->delayMs = RANGEFINDER_VIRTUAL_TASK_PERIOD_MS;
