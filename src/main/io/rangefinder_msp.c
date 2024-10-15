@@ -49,7 +49,7 @@
 
 static bool hasNewData = false;
 static int32_t sensorData = RANGEFINDER_NO_NEW_DATA;
-#ifdef VERTICAL_OPFLOW 
+#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK)
 float sensorDataF = 0; // omri-todo this one has down drift over time related to something in the opflow. check if rate is stady and if it is same on any hardware 
 #endif
 
@@ -83,7 +83,7 @@ static int32_t mspRangefinderGetDistance(void)
     }
 }
 
-#ifdef VERTICAL_OPFLOW // get callback by the the opflow whenever it has new data and its x value is used as z for the range finder 
+#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK) // get callback by the the opflow whenever it has new data and its x value is used as z for the range finder 
 void opflowSyncRangefinder(float dMm)
 {
     sensorDataF += dMm; 
@@ -106,7 +106,7 @@ void mspRangefinderReceiveNewData(uint8_t * bufferPtr)
 #ifdef VERTICAL_OPFLOW_DEMO
     DEBUG_SET(DEBUG_FLOW, 5, (pkt->distanceMm/10));
 #endif    
-#ifdef VERTICAL_OPFLOW // let the opflow use this new z value as x 
+#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK) // let the opflow use this new z value as x 
     void rangefinderSyncOpflow(int32_t zFromRangeFinder);
     rangefinderSyncOpflow(pkt->distanceMm);
 #else

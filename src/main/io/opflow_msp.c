@@ -45,6 +45,7 @@
 
 #include <string.h>
 #include "flight/imu.h"
+#include "sensors/opflow.h"
 
 #define MICOLINK_MSG_HEAD            0xEF
 #define MICOLINK_MAX_PAYLOAD_LEN     64
@@ -88,6 +89,7 @@ typedef struct
 static MICOLINK_PAYLOAD_RANGE_SENSOR_t mtf_01;
 static float mtf_01_vel_cm_sec[3];
 static float mtf_01_move_cm[3]; 
+static float mtf_01_move_cm_gyro[2];
 static bool mtf_01_is_init = false;
 
 static bool micolink_check_sum(MICOLINK_MSG_t* msg)
@@ -225,69 +227,128 @@ void micolink_decode(uint8_t data)
             mspRangefinderReceiveNewData((uint8_t*)&fake_msp);
 #endif
 
-            static float distnace_prev = 0.0;
+            static float distance_cm_prev = 0.0;
             static uint32_t time_ms_prev = 0;
 
             // if all valid 
             if ( mtf_01.dis_status>0 && mtf_01.flow_status>0 ) {
 
-                // if this is the 2nd time all is valid --> we can get delta's 
-                float tilt = calculateCosTiltAngle(); // do pitch angle tilt correction 
-                DEBUG_SET(DEBUG_FLOW_RAW, 7, (tilt*100.0) );
+                // do pitch angle tilt correction - tilt is the current tilt. no averaging or accumulating is done here 
+                // omri-todo - inav-bug - get average titl in this same interval (typically this is a 10ms interval - sampiling at 100hz)
+                float tilt = calculateCosTiltAngle(); 
+                float tilt_percent = (1-tilt)*100;
+                DEBUG_SET(DEBUG_FLOW_RAW, 7, tilt_percent);
                 float distance_cm = (float)mtf_01.distance / 10.0 * tilt; // do pitch angle tilt correction 
-                static float distance_cm_filtered = 0;
-                
-                distance_cm_filtered = distance_cm * 0.1 + distance_cm_filtered * 0.9;
+                static float fdistance_cm = 0;
+                fdistance_cm = 0.9 * fdistance_cm + distance_cm * 0.1;
+
+                // if this is the 2nd time (mtf_01_is_init is true) all is valid --> we can get delta's 
                 if ( mtf_01_is_init ) {
 
                     // distance prep 
-                    float distance_factor = (float)mtf_01.distance / 1000.0; // 1000mm <--> 1m
-                    float delta_distance = distance_cm_filtered - distnace_prev;
+                    float distance_1m_factor = (float)mtf_01.distance / 1000.0; // 1000mm <--> 1m
+                    float delta_distance_cm = fdistance_cm - distance_cm_prev;
 
                     // time prep 
-                    uint32_t dt = mtf_01.time_ms - time_ms_prev;
-                    float time_factor = 1000.0 / (float)dt;
-                    DEBUG_SET(DEBUG_FLOW_RAW, 6, dt );
+                    uint32_t dt_ms = mtf_01.time_ms - time_ms_prev;
+                    float time_1sec_factor = 1000.0 / (float)dt_ms;
+                    DEBUG_SET(DEBUG_FLOW_RAW, 6, dt_ms );
 
-#ifdef VERTICAL_OPFLOW
-                    // calculate velocities 
-                    mtf_01_vel_cm_sec[0] = (float)mtf_01.flow_vel_x /* cm/sec @1m */ * distance_factor;
-                    mtf_01_vel_cm_sec[1] = (float)-delta_distance * time_factor;
-                    mtf_01_vel_cm_sec[2] = (float)-mtf_01.flow_vel_y /* cm/sec @1m */ * distance_factor;
-#else
-                    // calculate velocities 
-                    mtf_01_vel_cm_sec[0] = (float)mtf_01.flow_vel_x /* cm/sec @1m */ * distance_factor;
-                    mtf_01_vel_cm_sec[1] = (float)mtf_01.flow_vel_y /* cm/sec @1m */ * distance_factor;
-                    mtf_01_vel_cm_sec[2] = (float)delta_distance * time_factor;
-#endif
-
-                    // calcualte distances 
-                    for ( int i=0; i<3; i++ ) {
-                        mtf_01_move_cm[i] += mtf_01_vel_cm_sec[i] / time_factor;
+                    // x velocity in cm per second deducting gyro rotational effect in the same plane 
+                    bool is_garbage = false;
+                    float vel_x = (float)mtf_01.flow_vel_x /* cm/sec @1m */ * distance_1m_factor;
+                    if ( opflow.gyroBodyRateTimeUs > 0) {    
+                        float gyro_dps = opflow.gyroBodyRateAcc[0] / (float)opflow.gyroBodyRateTimeUs; // gyroBodyRateAcc = sum(dps[i]*period_in_us[i]) --> avg_dps = gyroBodyRateAcc/sum(period_in_us[i])
+                        gyro_dps = DEGREES_TO_RADIANS(gyro_dps);
+                        float vel_gyro = gyro_dps * fdistance_cm; 
+                        mtf_01_move_cm_gyro[0] += vel_gyro / time_1sec_factor;
+                        vel_x += vel_gyro; // add since direction is inverted with the gyro and the opflow in the x axis (omri-todo - investage why) 
                     }
-                }
-                else {
-                    distance_cm_filtered = distance_cm;
+                    if ( vel_x > 2000 || vel_x < -2000 ) { // ~70 km/h max theoretic drone speed 
+                        is_garbage = true;
+                    }
+
+                    // y velocity in cm per second deducting gyro rotational effect in the same plane 
+                    float vel_y = (float)mtf_01.flow_vel_y /* cm/sec @1m */ * distance_1m_factor;
+                    if (opflow.gyroBodyRateTimeUs > 0) {
+                        float gyro_dps = opflow.gyroBodyRateAcc[1] / (float)opflow.gyroBodyRateTimeUs; // gyroBodyRateAcc = sum(dps[i]*period_in_us[i]) --> avg_dps = gyroBodyRateAcc/sum(period_in_us[i])
+                        gyro_dps = DEGREES_TO_RADIANS(gyro_dps);
+                        float vel_gyro = gyro_dps * fdistance_cm; 
+                        mtf_01_move_cm_gyro[1] += vel_gyro / time_1sec_factor;
+                        vel_y -= vel_gyro;
+                        vel_y = -vel_y; // invert 
+                    }
+                    if ( vel_y > 2000 || vel_y < -2000 ) { // 2000 cm/sec = 0.02*3600 km/h = 72 km/h max theoretic drone speed 
+                        is_garbage = true;
+                    }
+
+                    // z velocity in cm per second - gyro not relevant here, just the tilt, which was already deducted 
+                    float vel_z = (float)delta_distance_cm * time_1sec_factor;
+                    if ( vel_z > 1000 || vel_z < -1000 ) { // 35 km/h 
+                        is_garbage = true;
+                    }
+
+                    // rare event of garbage --> ignore it 
+                    if ( is_garbage ) {
+                        opflow.gyroBodyRateAcc[0] = 0;
+                        opflow.gyroBodyRateAcc[1] = 0;
+                        opflow.gyroBodyRateTimeUs = 0;
+                        return;
+                    }
+#if 0
+                    extern bool  USE_OPFLOW_MICOLINK_is_vertical;
+                    if ( USE_OPFLOW_MICOLINK_is_vertical ) {
+                        // set velocities relative to body frame - when sensor is facing the wall y/z are flipped and their signes are flipped as well
+                        mtf_01_vel_cm_sec[0] = vel_x; // drone moves right/left --> indiferent to wall facing or ground facing 
+                        mtf_01_vel_cm_sec[1] = -vel_z; // drone moves forwards/backwards --> this is 'z' which is the rangefinder delta's 
+                        mtf_01_vel_cm_sec[2] = vel_y; // drone moves up/down --> this is the 'y' relative to the vertical wall we're facing 
+                    }
+                    else {
+#endif
+                    {           
+                        // set velocities relative to body frame - when sensor is facing down al axis are remain aligned 
+                        mtf_01_vel_cm_sec[0] = vel_x; // drone moves right/left 
+                        mtf_01_vel_cm_sec[1] = -vel_z; // drone moves forwards/backwards 
+                        mtf_01_vel_cm_sec[2] = vel_y; // drone moves up/down 
+                    }
+
+                    // accumulate distances 
+                    mtf_01_move_cm[0] += mtf_01_vel_cm_sec[0] / time_1sec_factor;
+                    mtf_01_move_cm[1] += mtf_01_vel_cm_sec[1] / time_1sec_factor;
+                    mtf_01_move_cm[2] += mtf_01_vel_cm_sec[2] / time_1sec_factor;
                 }
 
                 // save for next time 
-                mtf_01_is_init = true;
-                distnace_prev = distance_cm_filtered;
+                mtf_01_is_init = true; // mark this the next round may use delta's for sure 
+                distance_cm_prev = fdistance_cm;
                 time_ms_prev = mtf_01.time_ms;
             }
+
+            // we're lost --> reset 
             else {
+
+                // we're lost!
                 mtf_01_is_init = false; 
-                for ( int i=0; i<3; i++ ) {
-                    mtf_01_move_cm[i] = 0; // NA 
-                }
+
+                // range starts from new 0 ref here once we're lost in space 
+                //mtf_01_move_cm[0] = 1000; // NA 
+                //mtf_01_move_cm[1] = 1000; // NA 
+                //mtf_01_move_cm[2] = 1000; // NA --> start from 50cm 
+                //mtf_01_move_cm_gyro[0] = 0;
+                //mtf_01_move_cm_gyro[1] = 0;
             }
+
+            // zero gyro accumulators every time we visit here 
+            opflow.gyroBodyRateAcc[0] = 0;
+            opflow.gyroBodyRateAcc[1] = 0;
+            opflow.gyroBodyRateTimeUs = 0;
 
             DEBUG_SET(DEBUG_FLOW, 3, mtf_01_move_cm[0]);
             DEBUG_SET(DEBUG_FLOW, 4, mtf_01_move_cm[1]);
             DEBUG_SET(DEBUG_FLOW, 5, mtf_01_move_cm[2]);
 
-            DEBUG_SET(DEBUG_FLOW_RAW, 0, mtf_01_vel_cm_sec[0]);
-            DEBUG_SET(DEBUG_FLOW_RAW, 1, mtf_01_vel_cm_sec[1]);
+            DEBUG_SET(DEBUG_FLOW_RAW, 0, mtf_01_move_cm_gyro[0]);
+            DEBUG_SET(DEBUG_FLOW_RAW, 1, mtf_01_move_cm_gyro[1]);
             DEBUG_SET(DEBUG_FLOW_RAW, 2, mtf_01_vel_cm_sec[2]);
             DEBUG_SET(DEBUG_FLOW_RAW, 3, mtf_01_move_cm[0]);
             DEBUG_SET(DEBUG_FLOW_RAW, 4, mtf_01_move_cm[1]);
@@ -315,7 +376,7 @@ void micolink_decode(uint8_t data)
 
 static bool hasNewData = false;
 static timeUs_t updatedTimeUs = 0;
-#ifdef VERTICAL_OPFLOW // define this to get callback whenever the range finder is updated 
+#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK) // define this to get callback whenever the range finder is updated 
 static int32_t rangeFinderLastValueMm = -1;
 static timeUs_t updatedTimeUsY = 0;
 static timeDelta_t deltaTimeY = 0; // Integration timeframe of motionX/Y
@@ -344,7 +405,7 @@ static bool mspOpflowUpdate(opflowData_t * data)
     return false;
 }
 
-#ifdef VERTICAL_OPFLOW // define this to get callback whenever the range finder is updated 
+#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK) // define this to get callback whenever the range finder is updated 
 
 #define PIXELS 30 // 30 x 30 
 #define MUL_FACTOR ((float)0.0255909356690277*(float)30.0/(float)PIXELS)
@@ -422,7 +483,7 @@ void mspOpflowReceiveNewData(uint8_t * bufferPtr)
     const mspSensorOpflowDataMessage_t * pkt = (const mspSensorOpflowDataMessage_t *)bufferPtr;
 
     sensorData.deltaTime = currentTimeUs - updatedTimeUs;
-#ifdef VERTICAL_OPFLOW // inform the range finder that we have a new y value (used as z)
+#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK) // inform the range finder that we have a new y value (used as z)
     if ( rangeFinderLastValueMm >= 0 && currentTimeUs > updatedTimeUs ) {
         // convert motionX (speed in cm/sec) to dx in mm - dividve by 10E6 to get micros and multiple by 10 for mm --> 10E5  
         float mmDelta = pixelsPerSec2mmDelta(pkt->motionY, sensorData.deltaTime, rangeFinderLastValueMm);
@@ -520,19 +581,19 @@ void all_in_one()
     const float flowVelXInnov = flowVel.x - posEstimator.est.vel.x;
     const float flowVelYInnov = flowVel.y - posEstimator.est.vel.y;
 
-    ctx->estVelCorr.x = flowVelXInnov * positionEstimationConfig()->w_xy_flow_v * ctx->dt;
-    ctx->estVelCorr.y = flowVelYInnov * positionEstimationConfig()->w_xy_flow_v * ctx->dt;
+    ctx->estVelCorr.x = flowVelXInnov * positionEstimationConfig()->w_xy_flow_v * ctx->dt_ms;
+    ctx->estVelCorr.y = flowVelYInnov * positionEstimationConfig()->w_xy_flow_v * ctx->dt_ms;
 
-    posEstimator.est.flowCoordinates[X] += flowVel.x * ctx->dt;
-    posEstimator.est.flowCoordinates[Y] += flowVel.y * ctx->dt;
+    posEstimator.est.flowCoordinates[X] += flowVel.x * ctx->dt_ms;
+    posEstimator.est.flowCoordinates[Y] += flowVel.y * ctx->dt_ms;
 
     const float flowResidualX = posEstimator.est.flowCoordinates[X] - posEstimator.est.pos.x;
     const float flowResidualY = posEstimator.est.flowCoordinates[Y] - posEstimator.est.pos.y;
 
-    ctx->estPosCorr.x = flowResidualX * positionEstimationConfig()->w_xy_flow_p * ctx->dt;
-    ctx->estPosCorr.y = flowResidualY * positionEstimationConfig()->w_xy_flow_p * ctx->dt;
+    ctx->estPosCorr.x = flowResidualX * positionEstimationConfig()->w_xy_flow_p * ctx->dt_ms;
+    ctx->estPosCorr.y = flowResidualY * positionEstimationConfig()->w_xy_flow_p * ctx->dt_ms;
 
-    ctx->newEPH = updateEPE(posEstimator.est.eph, ctx->dt, calc_length_pythagorean_2D(flowResidualX, flowResidualY), positionEstimationConfig()->w_xy_flow_p);
+    ctx->newEPH = updateEPE(posEstimator.est.eph, ctx->dt_ms, calc_length_pythagorean_2D(flowResidualX, flowResidualY), positionEstimationConfig()->w_xy_flow_p);
 }
 #endif
 #endif

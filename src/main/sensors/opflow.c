@@ -138,8 +138,27 @@ static void opflowZeroBodyGyroAcc(void)
     opflow.gyroBodyRateAcc[Y] = 0;
 }
 
+
+#if defined(USE_OPFLOW_MICOLINK) 
+bool  USE_OPFLOW_MICOLINK_is_vertical = false;
+int   USE_OPFLOW_MICOLINK_flip = 1;
+float USE_OPFLOW_MICOLINK_signx = 1.0;
+float USE_OPFLOW_MICOLINK_signy = 1.0;
+#endif
+
 bool opflowInit(void)
 {
+#if defined(USE_OPFLOW_MICOLINK) 
+    uint32_t mask = ((uint32_t)(opticalFlowConfig()->opflow_scale*10.0));
+    USE_OPFLOW_MICOLINK_is_vertical = (mask % 10)>0 ? 1 : 0;
+    mask /= 10;
+    USE_OPFLOW_MICOLINK_flip = (mask % 10)>0 ? 1 : 0;
+    mask /= 10;
+    USE_OPFLOW_MICOLINK_signx = (mask % 10)>0 ? -1.0 : 1.0;
+    mask /= 10;
+    USE_OPFLOW_MICOLINK_signy = (mask % 10)>0 ? -1.0 : 1.0;
+#endif
+
     if (!opflowDetect(&opflow.dev, opticalFlowConfig()->opflow_hardware)) {
         return false;
     }
@@ -168,8 +187,10 @@ void opflowStartCalibration(void)
 void opflowUpdate(timeUs_t currentTimeUs)
 {
 #ifdef USE_OPFLOW_MICOLINK
+    bool mtf_01_is_valid(void);
     opflow.isHwHealty = true;
     opflow.lastValidUpdate = currentTimeUs;
+    opflow.flowQuality = mtf_01_is_valid() ? OPFLOW_QUALITY_VALID : OPFLOW_QUALITY_INVALID;
 #else
     if (!opflow.dev.updateFn)
         return;
@@ -279,12 +300,19 @@ void opflowUpdate(timeUs_t currentTimeUs)
 /* Run a simple gyro update integrator to estimate average body rate between two optical flow updates */
 void opflowGyroUpdateCallback(timeUs_t gyroUpdateDeltaUs)
 {
+#ifndef USE_OPFLOW_MICOLINK
     if (!opflow.isHwHealty)
         return;
+#endif
 
-    for (int axis = 0; axis < 2; axis++) {
-        opflow.gyroBodyRateAcc[axis] += gyro.gyroADCf[axis] * gyroUpdateDeltaUs;
+//    extern bool USE_OPFLOW_MICOLINK_is_vertical;
+  //  if ( USE_OPFLOW_MICOLINK_is_vertical ) {
+    //    opflow.gyroBodyRateAcc[0] += gyro.gyroADCf[2/*Z = yaw*/] * gyroUpdateDeltaUs; // when sensor is facing the wall, we should use z axis gyro 
+    //}
+    {//else {
+        opflow.gyroBodyRateAcc[0] += gyro.gyroADCf[2/*X = roll*/] * gyroUpdateDeltaUs; // sum for weighted average later on by dividing by opflow.gyroBodyRateTimeUs
     }
+    opflow.gyroBodyRateAcc[1] += gyro.gyroADCf[1/*Y = pitch*/] * gyroUpdateDeltaUs; // sum for weighted average later on by dividing by opflow.gyroBodyRateTimeUs
 
     opflow.gyroBodyRateTimeUs += gyroUpdateDeltaUs;
 }

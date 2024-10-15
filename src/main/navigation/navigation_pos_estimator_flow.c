@@ -74,9 +74,18 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
     DEBUG_SET(DEBUG_FLOW, 1, y);
     DEBUG_SET(DEBUG_FLOW, 2, posEstimator.surface.alt);
 #endif
-
+/* 1001100
+    EST_GPS_XY_VALID            = (1 << 0), // 0
+    EST_GPS_Z_VALID             = (1 << 1), // 0
+    EST_BARO_VALID              = (1 << 2), // 1
+    EST_SURFACE_VALID           = (1 << 3), // 1
+    EST_FLOW_VALID              = (1 << 4), // 0 !!!
+    EST_XY_VALID                = (1 << 5), // 0 !!!
+    EST_Z_VALID                 = (1 << 6), // 1 */
 
     if (!((ctx->newFlags & EST_FLOW_VALID) && (ctx->newFlags & EST_SURFACE_VALID) && (ctx->newFlags & EST_Z_VALID))) {
+        DEBUG_SET(DEBUG_FLOW, 0, ctx->newFlags);
+        DEBUG_SET(DEBUG_FLOW, 1, posEstimator.surface.reliability );
         return false;
     }
 
@@ -84,16 +93,23 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
     const bool canUseFlow = (posEstimator.surface.reliability >= RANGEFINDER_RELIABILITY_LOW_THRESHOLD);
 
     if (!canUseFlow) {
+        DEBUG_SET(DEBUG_FLOW, 0, ctx->newFlags);
+        DEBUG_SET(DEBUG_FLOW, 1, posEstimator.surface.reliability );
         return false;
     }
 
     // Calculate linear velocity based on angular velocity and altitude
     // Technically we should calculate arc length here, but for fast sampling this is accurate enough
 #if defined(USE_OPFLOW_MICOLINK) 
+    extern int   USE_OPFLOW_MICOLINK_flip; // 1 
+    extern float USE_OPFLOW_MICOLINK_signx; // -1 1
+    extern float USE_OPFLOW_MICOLINK_signy; // 1 
+
+    // opflow_scale = 111.0 --> [1/2]=signy [1/2]=signx [1/2]=is_flip_xy default=110 
     float mtf_01_get_velocity_cm_sec(int i);
     fpVector3_t flowVel = {
-        .x = -mtf_01_get_velocity_cm_sec(1), // -Y 
-        .y =  mtf_01_get_velocity_cm_sec(0), // +X
+        .x = USE_OPFLOW_MICOLINK_signx*mtf_01_get_velocity_cm_sec(USE_OPFLOW_MICOLINK_flip), // -Y 
+        .y = USE_OPFLOW_MICOLINK_signy*mtf_01_get_velocity_cm_sec(1-USE_OPFLOW_MICOLINK_flip), // +X
         .z =  mtf_01_get_velocity_cm_sec(2)  // +Z
     };
 #else        
@@ -104,9 +120,17 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
     };
 #endif        
 
-    DEBUG_SET(DEBUG_FLOW, 0, flowVel.x);
-    DEBUG_SET(DEBUG_FLOW, 1, flowVel.y);
-    DEBUG_SET(DEBUG_FLOW, 2, flowVel.x);
+#if 1 //
+    static float x = 0.0;
+    static float y = 0.0;
+    static float z = 0.0;
+    x += flowVel.x*ctx->dt;
+    y += flowVel.y*ctx->dt;
+    z += flowVel.z*ctx->dt;
+    DEBUG_SET(DEBUG_FLOW, 0, x);
+    DEBUG_SET(DEBUG_FLOW, 1, y);
+    DEBUG_SET(DEBUG_FLOW, 2, z);
+#endif
 
     // At this point flowVel will hold linear velocities in earth frame
     imuTransformVectorBodyToEarth(&flowVel);
@@ -134,10 +158,15 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
         ctx->estPosCorr.x = flowResidualX * positionEstimationConfig()->w_xy_flow_p * ctx->dt;
         ctx->estPosCorr.y = flowResidualY * positionEstimationConfig()->w_xy_flow_p * ctx->dt;
 
+#if 1 //
+        DEBUG_SET(DEBUG_FLOW, 6, posEstimator.est.flowCoordinates[X]);
+        DEBUG_SET(DEBUG_FLOW, 7, posEstimator.est.flowCoordinates[Y]);
+#endif
+
         ctx->newEPH = updateEPE(posEstimator.est.eph, ctx->dt, calc_length_pythagorean_2D(flowResidualX, flowResidualY), positionEstimationConfig()->w_xy_flow_p);
     }
 
-#ifndef VERTICAL_OPFLOW_DEMO
+#if 0 // ndef VERTICAL_OPFLOW_DEMO
     DEBUG_SET(DEBUG_FLOW, 0, RADIANS_TO_DEGREES(posEstimator.flow.flowRate[X]));
     DEBUG_SET(DEBUG_FLOW, 1, RADIANS_TO_DEGREES(posEstimator.flow.flowRate[Y]));
     DEBUG_SET(DEBUG_FLOW, 2, posEstimator.est.flowCoordinates[X]);
