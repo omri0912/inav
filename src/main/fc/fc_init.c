@@ -254,6 +254,9 @@ void init(void)
 
     debugMode = systemConfig()->debug_mode;
 
+    // init mtf after configuration was read from EEPROM but before serial and MSP are actually tested 
+    mtf_01_init();
+
     // Latch active features to be used for feature() in the remainder of init().
     latchActiveFeatures();
 

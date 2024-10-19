@@ -37,11 +37,7 @@
 
 #include "io/serial.h"
 
-
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#ifdef USE_OPFLOW_MICOLINK
 
 #include <string.h>
 #include "flight/imu.h"
@@ -51,6 +47,12 @@
 #define MICOLINK_MAX_PAYLOAD_LEN     64
 #define MICOLINK_MAX_LEN             MICOLINK_MAX_PAYLOAD_LEN + 7
 #define MICOLINK_MSG_ID_RANGE_SENSOR 0x51 // Range Sensor
+
+#if SWITCH_OPFLOW_EVERY_10SEC 
+#include "drivers/time.h"
+#else
+#include "fc/rc_modes.h"
+#endif
 
 // Message Structure Definition
 typedef struct
@@ -91,6 +93,59 @@ static float mtf_01_vel_cm_sec[3];
 static float mtf_01_move_cm[3]; 
 static float mtf_01_move_cm_gyro[2];
 static bool mtf_01_is_init = false;
+static bool mtf_01_swap = false;
+static MICOLINK_MSG_t mtf_01_msg;
+bool mtf_01_facing_down = true;
+serialPortIdentifier_e mtf_01_identifier = SERIAL_PORT_NONE;
+
+
+void mtf_01_init(void)
+{
+    // 115 --> uart5 facing the wall  
+    // 104 --> uart5 facing down 
+    uint32_t val = (uint32_t)(opticalFlowConfig()->opflow_scale);
+    uint32_t uart = val % 10;
+    val /= 10;
+    uint32_t is_facing_wall = val % 10;
+    val /= 10;
+
+// serial 0 0 115200 115200 0 115200
+// serial 1 1 115200 115200 0 115200
+// set opflow_scale = 114.0
+// set opflow_scale = 102.0
+
+    // 1 is just a "secret" code 1xy 
+    if ( val==1 && is_facing_wall<2 && uart>0 && uart<9 ) {
+        mtf_01_facing_down = is_facing_wall ? false : true;
+        mtf_01_identifier = uart-1;
+    }
+    else {
+        mtf_01_facing_down = true;
+        mtf_01_identifier = SERIAL_PORT_NONE; // MSP 
+    }
+
+#if SCALE_ALTITUDE_AT_ALTHOLD
+    void flyz_throttle_span_init(void);
+    flyz_throttle_span_init();
+#endif
+}
+
+static void mtf_01_init_at_runtime(bool is_facing_wall)
+{
+    mtf_01_facing_down = is_facing_wall ? false : true;
+    mtf_01_swap = true;
+    mtf_01_msg.status = 0;
+}
+
+bool mtf_01_is_micolink(void)
+{
+    return mtf_01_identifier != SERIAL_PORT_NONE;
+}
+
+bool mtf_01_is_facing_down(void)
+{
+    return mtf_01_facing_down;
+}
 
 static bool micolink_check_sum(MICOLINK_MSG_t* msg)
 {
@@ -205,30 +260,32 @@ float mtf_01_get_velocity_cm_sec(int i)
     return mtf_01_vel_cm_sec[i];
 }
 
-void micolink_decode(uint8_t data)
+void mtf_01_micolink_decode(serialPortIdentifier_e identifier, uint8_t data)
 {
-    static MICOLINK_MSG_t msg;
+    // if this uart (identifier) is not a micolink uart - do nothing 
+    if ( mtf_01_swap ? identifier==mtf_01_identifier : identifier!=mtf_01_identifier ) {
+        return;
+    }
 
-    if(micolink_parse_char(&msg, data) == false)
+    if(micolink_parse_char(&mtf_01_msg, data) == false)
         return;
     
-    switch(msg.msg_id)
+    switch(mtf_01_msg.msg_id)
     {
         case MICOLINK_MSG_ID_RANGE_SENSOR:
         {
-            memcpy(&mtf_01, msg.payload, msg.len);
-
-#if 0
-            // "send" msp packet to the rangefinder 
-            void mspRangefinderReceiveNewData(uint8_t * bufferPtr);
-            static mspSensorRangefinderDataMessage_t fake_msp;
-            fake_msp.distanceMm = mtf_01.distance; // mm 
-            fake_msp.quality = mtf_01.strength; // 0-255 
-            mspRangefinderReceiveNewData((uint8_t*)&fake_msp);
-#endif
+            memcpy(&mtf_01, mtf_01_msg.payload, mtf_01_msg.len);
 
             static float distance_cm_prev = 0.0;
             static uint32_t time_ms_prev = 0;
+            static float fdistance_cm = 0;
+
+            if ( mtf_01_swap ) {
+                mtf_01_swap = false;
+                mtf_01_identifier = identifier;
+                mtf_01_is_init = false;
+                fdistance_cm = 0;
+            }
 
             // if all valid 
             if ( mtf_01.dis_status>0 && mtf_01.flow_status>0 ) {
@@ -239,8 +296,12 @@ void micolink_decode(uint8_t data)
                 float tilt_percent = (1-tilt)*100;
                 DEBUG_SET(DEBUG_FLOW_RAW, 7, tilt_percent);
                 float distance_cm = (float)mtf_01.distance / 10.0 * tilt; // do pitch angle tilt correction 
-                static float fdistance_cm = 0;
-                fdistance_cm = 0.9 * fdistance_cm + distance_cm * 0.1;
+                if ( fdistance_cm==0 ) {
+                    fdistance_cm = distance_cm;
+                }
+                else {
+                    fdistance_cm = 0.9 * fdistance_cm + distance_cm * 0.1;
+                }
 
                 // if this is the 2nd time (mtf_01_is_init is true) all is valid --> we can get delta's 
                 if ( mtf_01_is_init ) {
@@ -295,21 +356,18 @@ void micolink_decode(uint8_t data)
                         opflow.gyroBodyRateTimeUs = 0;
                         return;
                     }
-#if 0
-                    extern bool  USE_OPFLOW_MICOLINK_is_vertical;
-                    if ( USE_OPFLOW_MICOLINK_is_vertical ) {
+
+                    if ( !mtf_01_facing_down ) {
                         // set velocities relative to body frame - when sensor is facing the wall y/z are flipped and their signes are flipped as well
                         mtf_01_vel_cm_sec[0] = vel_x; // drone moves right/left --> indiferent to wall facing or ground facing 
                         mtf_01_vel_cm_sec[1] = -vel_z; // drone moves forwards/backwards --> this is 'z' which is the rangefinder delta's 
                         mtf_01_vel_cm_sec[2] = vel_y; // drone moves up/down --> this is the 'y' relative to the vertical wall we're facing 
                     }
                     else {
-#endif
-                    {           
                         // set velocities relative to body frame - when sensor is facing down al axis are remain aligned 
                         mtf_01_vel_cm_sec[0] = vel_x; // drone moves right/left 
-                        mtf_01_vel_cm_sec[1] = -vel_z; // drone moves forwards/backwards 
-                        mtf_01_vel_cm_sec[2] = vel_y; // drone moves up/down 
+                        mtf_01_vel_cm_sec[1] = vel_y; // drone moves forwards/backwards 
+                        mtf_01_vel_cm_sec[2] = vel_z; // drone moves up/down 
                     }
 
                     // accumulate distances 
@@ -326,16 +384,8 @@ void micolink_decode(uint8_t data)
 
             // we're lost --> reset 
             else {
-
                 // we're lost!
                 mtf_01_is_init = false; 
-
-                // range starts from new 0 ref here once we're lost in space 
-                //mtf_01_move_cm[0] = 1000; // NA 
-                //mtf_01_move_cm[1] = 1000; // NA 
-                //mtf_01_move_cm[2] = 1000; // NA --> start from 50cm 
-                //mtf_01_move_cm_gyro[0] = 0;
-                //mtf_01_move_cm_gyro[1] = 0;
             }
 
             // zero gyro accumulators every time we visit here 
@@ -353,6 +403,23 @@ void micolink_decode(uint8_t data)
             DEBUG_SET(DEBUG_FLOW_RAW, 3, mtf_01_move_cm[0]);
             DEBUG_SET(DEBUG_FLOW_RAW, 4, mtf_01_move_cm[1]);
             DEBUG_SET(DEBUG_FLOW_RAW, 5, mtf_01_move_cm[2]);
+            
+#if SWITCH_OPFLOW_EVERY_10SEC 
+            uint32_t t = millis();
+            static uint32_t timeout = 20000;
+            if ( t >= timeout ) {
+                timeout += 10000;
+                mtf_01_init_at_runtime(mtf_01_facing_down);
+                DEBUG_SET(DEBUG_FLOW, 6, timeout/10000);
+                DEBUG_SET(DEBUG_FLOW, 7, mtf_01_facing_down);
+            }
+#elif MUX_FOR_OPFLOW_SWITCH
+            // at end of a packet - check if AUX changed 
+            if ( IS_RC_MODE_ACTIVE(BOXLOITERDIRCHN) ? mtf_01_facing_down : !mtf_01_facing_down ) {
+                mtf_01_init_at_runtime(mtf_01_facing_down);
+                DEBUG_SET(DEBUG_FLOW, 7, mtf_01_facing_down);
+            }
+#endif
             break;
         } 
 
@@ -360,8 +427,6 @@ void micolink_decode(uint8_t data)
             break;
         }
 }
-
-#endif // USE_OPFLOW_MICOLINK
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -376,11 +441,6 @@ void micolink_decode(uint8_t data)
 
 static bool hasNewData = false;
 static timeUs_t updatedTimeUs = 0;
-#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK) // define this to get callback whenever the range finder is updated 
-static int32_t rangeFinderLastValueMm = -1;
-static timeUs_t updatedTimeUsY = 0;
-static timeDelta_t deltaTimeY = 0; // Integration timeframe of motionX/Y
-#endif
 static opflowData_t sensorData = { 0 };
 
 static bool mspOpflowDetect(void)
@@ -405,131 +465,17 @@ static bool mspOpflowUpdate(opflowData_t * data)
     return false;
 }
 
-#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK) // define this to get callback whenever the range finder is updated 
-
-#define PIXELS 30 // 30 x 30 
-#define MUL_FACTOR ((float)0.0255909356690277*(float)30.0/(float)PIXELS)
-
-#define CRAZY_FACTOR 
-
-static float pixelsPerSec2mmDelta( int32_t deltaPixelsPer10msec, int32_t intervalUSec, int32_t rangeMm)
-{
-    // how many pixels shift we got during intervalUSec 
-    float deltaPixelsPerIntervalUSec = (float)deltaPixelsPer10msec / 10000.0 * (float)intervalUSec;
-
-    // how many mm shift we got during intervalUSec
-    float expectedMmDelta = (deltaPixelsPerIntervalUSec * (float)rangeMm * MUL_FACTOR); // 0.0255909356690277 = 2*tan(radians(42/2))/30
-
-#ifdef CRAZY_FACTOR 
-    // divide the result be value between 4 and 12 
-    float mmDelta = expectedMmDelta / 4.0; 
-    if ( rangeMm > 100 ) {
-        float div2 = 1.0 + (float)(rangeMm - 100)/1100.0; 
-        mmDelta /= div2;
-    }
-
-    return mmDelta;
-#else
-    return expectedMmDelta;
-#endif    
-}
-
-// mmDelta is the delta in the range finder during the past usec time 
-// mmDelta is convertedto pixels and is actually delta in the x axis in case the point of view was top/down 
-static float mm2pixels(int32_t mmDelta)
-{
-    // the distance the virtual range finder believes it sees (it is actually the accumulation of dx from the OPFLOW)
-    int32_t mspRangefinderGetDistanceLast(void);
-    int32_t virtualDistanceMm = mspRangefinderGetDistanceLast()*10;
-    if ( virtualDistanceMm<10 ) {
-        return 0;
-    }
-
-    // calc mm factor assuming 42 degrees field view 
-    float expPixels = (float)mmDelta / (float)virtualDistanceMm / MUL_FACTOR; // distance of the OPFLOW from the surfface in mm (this translates pixels later)
-
-#ifdef CRAZY_FACTOR 
-    // divide the result be value between 4 and 12 
-    float pixels = expPixels * 4.0; 
-    if ( virtualDistanceMm > 100 ) {
-        float div2 = 1.0 + (float)(virtualDistanceMm - 100)/1100.0; 
-        pixels *= div2;
-    }
-
-    return pixels;
-#else
-    return expPixels;
-#endif    
-}
-
-void rangefinderSyncOpflow(int32_t zFromRangeFinder)
-{
-    const timeUs_t currentTimeUs = micros(); // real time 
-    if ( rangeFinderLastValueMm >= 0 && currentTimeUs > updatedTimeUsY ) {
-        deltaTimeY = currentTimeUs - updatedTimeUsY;
-        int32_t dz = zFromRangeFinder - rangeFinderLastValueMm;
-        float pixels = mm2pixels(dz);
-        sensorData.flowRateRaw[1] = -pixels; 
-    }
-    rangeFinderLastValueMm = zFromRangeFinder;
-    updatedTimeUsY = currentTimeUs; // save time for next round 
-}
-#endif
-
-// we get in here every either 10 or 20 msec even though sensor sends every 10 msec. 
 void mspOpflowReceiveNewData(uint8_t * bufferPtr)
 {
     const timeUs_t currentTimeUs = micros();
     const mspSensorOpflowDataMessage_t * pkt = (const mspSensorOpflowDataMessage_t *)bufferPtr;
 
     sensorData.deltaTime = currentTimeUs - updatedTimeUs;
-#if defined(VERTICAL_OPFLOW) && !defined(USE_OPFLOW_MICOLINK) // inform the range finder that we have a new y value (used as z)
-    if ( rangeFinderLastValueMm >= 0 && currentTimeUs > updatedTimeUs ) {
-        // convert motionX (speed in cm/sec) to dx in mm - dividve by 10E6 to get micros and multiple by 10 for mm --> 10E5  
-        float mmDelta = pixelsPerSec2mmDelta(pkt->motionY, sensorData.deltaTime, rangeFinderLastValueMm);
-        void opflowSyncRangefinder(float dMm);
-        opflowSyncRangefinder(-mmDelta);
-        sensorData.flowRateRaw[0] = pkt->motionX;
-        if ( deltaTimeY > 0 ) { // sync to same time base 
-            sensorData.flowRateRaw[1] *= (sensorData.deltaTime/deltaTimeY); 
-        }
-        sensorData.flowRateRaw[2] = 0;
-        sensorData.quality = (int)pkt->quality * 100 / 255;
-        hasNewData = true;
-#ifdef VERTICAL_OPFLOW_DEMO
-        // cm 
-
-        static float cm_accumulated_y = 0.0;
-        cm_accumulated_y += mmDelta/10.0;
-
-        //DEBUG_SET(DEBUG_FLOW_RAW, 0, pkt->motionY);
-        //DEBUG_SET(DEBUG_FLOW_RAW, 1, sensorData.deltaTime);
-        //DEBUG_SET(DEBUG_FLOW_RAW, 2, rangeFinderLastValueMm);
-        //DEBUG_SET(DEBUG_FLOW_RAW, 3, (mmDelta*100.0));
-        //DEBUG_SET(DEBUG_FLOW_RAW, 4, cm_accumulated_y);
-
-        DEBUG_SET(DEBUG_FLOW, 4, cm_accumulated_y);
-        static float cm_accumulated_x = 0.0;
-        mmDelta = pixelsPerSec2mmDelta(pkt->motionX, sensorData.deltaTime, rangeFinderLastValueMm);
-        cm_accumulated_x += (mmDelta/10.0);
-        DEBUG_SET(DEBUG_FLOW, 3, cm_accumulated_x);
-
-        // pixels 
-        static float pixels_accumulated_x = 0;
-        pixels_accumulated_x += ((float)pkt->motionX * (float)sensorData.deltaTime / (float)10000.0);
-        DEBUG_SET(DEBUG_FLOW, 6, pixels_accumulated_x);
-        static float pixels_accumulated_y = 0;
-        pixels_accumulated_y += ((float)pkt->motionY * (float)sensorData.deltaTime / (float)10000.0);
-        DEBUG_SET(DEBUG_FLOW, 7, pixels_accumulated_y);
-#endif    
-    }
-#else
     sensorData.flowRateRaw[0] = pkt->motionX;
     sensorData.flowRateRaw[1] = pkt->motionY;
     sensorData.flowRateRaw[2] = 0;
     sensorData.quality = (int)pkt->quality * 100 / 255;
     hasNewData = true;
-#endif    
 
     updatedTimeUs = currentTimeUs;
 }
@@ -539,61 +485,5 @@ virtualOpflowVTable_t opflowMSPVtable = {
     .init = mspOpflowInit,
     .update = mspOpflowUpdate
 };
-#if 0
-void all_in_one()
-{
-    // opflow.bodyRate = accumulated DPS during opflow.dev.rawData.deltaTime microseconds 
-    // opflow.flowRate = accumulated pixels shift during opflow.dev.rawData.deltaTime microseconds 
-    // (float)opticalFlowConfig()->opflow_scale is usually 5.4 
 
-    const float integralToRateScaler = (1.0e6f / opflow.dev.rawData.deltaTime) / (float)opticalFlowConfig()->opflow_scale;
-
-    // Calculate flow rate and accumulated body rate
-    opflow.flowRate[X] = opflow.dev.rawData.flowRateRaw[X] * integralToRateScaler;
-    opflow.flowRate[Y] = opflow.dev.rawData.flowRateRaw[Y] * integralToRateScaler;
-
-    opflow.bodyRate[X] = DEGREES_TO_RADIANS(opflow.bodyRate[X]);
-    opflow.bodyRate[Y] = DEGREES_TO_RADIANS(opflow.bodyRate[Y]);
-    opflow.flowRate[X] = DEGREES_TO_RADIANS(opflow.flowRate[X]);
-    opflow.flowRate[Y] = DEGREES_TO_RADIANS(opflow.flowRate[Y]);
-
-    // Calculate linear velocity based on angular velocity and altitude
-    // Technically we should calculate arc length here, but for fast sampling this is accurate enough
-    fpVector3_t flowVel = {
-        .x = - (opflow.flowRate[Y] - opflow.bodyRate[Y]) * posEstimator.surface.alt,
-        .y =   (opflow.flowRate[X] - opflow.bodyRate[X]) * posEstimator.surface.alt,
-        .z =    posEstimator.est.vel.z
-    };
-
-    // From body frame to earth frame
-    typedef struct {
-        float q0, q1, q2, q3;
-    } fpQuaternion_t;
-    extern FASTRAM fpQuaternion_t orientation;
-    quaternionRotateVectorInv(&flowVel, &flowVel, &orientation);
-
-    // HACK: This is needed to correctly transform from NED (sensor frame) to NEU (navigation)
-    flowVel.y = -flowVel.y;
-
-    // At this point flowVel will hold linear velocities in earth frame
-
-    // Calculate velocity correction
-    const float flowVelXInnov = flowVel.x - posEstimator.est.vel.x;
-    const float flowVelYInnov = flowVel.y - posEstimator.est.vel.y;
-
-    ctx->estVelCorr.x = flowVelXInnov * positionEstimationConfig()->w_xy_flow_v * ctx->dt_ms;
-    ctx->estVelCorr.y = flowVelYInnov * positionEstimationConfig()->w_xy_flow_v * ctx->dt_ms;
-
-    posEstimator.est.flowCoordinates[X] += flowVel.x * ctx->dt_ms;
-    posEstimator.est.flowCoordinates[Y] += flowVel.y * ctx->dt_ms;
-
-    const float flowResidualX = posEstimator.est.flowCoordinates[X] - posEstimator.est.pos.x;
-    const float flowResidualY = posEstimator.est.flowCoordinates[Y] - posEstimator.est.pos.y;
-
-    ctx->estPosCorr.x = flowResidualX * positionEstimationConfig()->w_xy_flow_p * ctx->dt_ms;
-    ctx->estPosCorr.y = flowResidualY * positionEstimationConfig()->w_xy_flow_p * ctx->dt_ms;
-
-    ctx->newEPH = updateEPE(posEstimator.est.eph, ctx->dt_ms, calc_length_pythagorean_2D(flowResidualX, flowResidualY), positionEstimationConfig()->w_xy_flow_p);
-}
-#endif
 #endif

@@ -127,6 +127,8 @@ bool cliMode = false;
 #include "telemetry/telemetry.h"
 #include "build/debug.h"
 
+#include "flyz.h"
+
 extern timeDelta_t cycleTime; // FIXME dependency on mw.c
 extern uint8_t detectedSensors[SENSOR_INDEX_COUNT];
 

@@ -204,15 +204,15 @@ static int32_t applyMedianFilter(int32_t newReading)
  */
 timeDelta_t rangefinderUpdate(void)
 {
-#ifdef USE_OPFLOW_MICOLINK
-    return 0;
-#else
+    if ( mtf_01_is_micolink() ) {
+        return 0;
+    }
+
     if (rangefinder.dev.update) {
         rangefinder.dev.update(&rangefinder.dev);
     }
 
     return MS2US(rangefinder.dev.delayMs);
-#endif    
 }
 
 /**
@@ -220,24 +220,23 @@ timeDelta_t rangefinderUpdate(void)
  */
 bool rangefinderProcess(float cosTiltAngle)
 {
-#ifdef USE_OPFLOW_MICOLINK
-    (void)cosTiltAngle; // avoid warning of unused param 
-    rangefinder.lastValidResponseTimeMs = millis();
-    bool mtf_01_is_valid(void);
-    float mtf_01_get_move_cm(int i);
-    if ( mtf_01_is_valid() ) {
-        rangefinder.rawAltitude = mtf_01_get_move_cm(2);
-        rangefinder.calculatedAltitude = rangefinder.rawAltitude;
-        if (rangefinderConfig()->use_median_filtering) {
-            rangefinder.rawAltitude = applyMedianFilter(rangefinder.rawAltitude);
+    if ( mtf_01_is_micolink() ) {
+        rangefinder.lastValidResponseTimeMs = millis();
+        bool mtf_01_is_valid(void);
+        if ( mtf_01_is_valid() ) {
+            rangefinder.rawAltitude = mtf_01_get_move_cm(2);
+            rangefinder.calculatedAltitude = rangefinder.rawAltitude;
+            if (rangefinderConfig()->use_median_filtering) {
+                rangefinder.rawAltitude = applyMedianFilter(rangefinder.rawAltitude);
+            }
         }
+        else {
+            rangefinder.rawAltitude = RANGEFINDER_OUT_OF_RANGE;
+            rangefinder.calculatedAltitude = RANGEFINDER_OUT_OF_RANGE;
+        }
+        return true;
     }
-    else {
-        rangefinder.rawAltitude = RANGEFINDER_OUT_OF_RANGE;
-        rangefinder.calculatedAltitude = RANGEFINDER_OUT_OF_RANGE;
-    }
-    return true;
-#else
+
     if (rangefinder.dev.read) {
         const int32_t distance = rangefinder.dev.read(&rangefinder.dev);
 
@@ -280,9 +279,6 @@ bool rangefinderProcess(float cosTiltAngle)
         rangefinder.calculatedAltitude = rangefinder.rawAltitude * cosTiltAngle;
     }
 
-//    DEBUG_SET(DEBUG_FLOW, 4, rangefinder.calculatedAltitude );
-//    DEBUG_SET(DEBUG_FLOW, 7, ((int32_t)(100.0*cosTiltAngle)) );
-#endif
     return true;
 }
 

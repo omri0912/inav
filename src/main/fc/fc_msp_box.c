@@ -43,6 +43,8 @@
 
 #include "telemetry/telemetry.h"
 
+#include "flyz.h"
+
 #define BOX_SUFFIX ';'
 #define BOX_SUFFIX_LEN 1
 
@@ -89,7 +91,11 @@ static const box_t boxes[CHECKBOX_ITEM_COUNT + 1] = {
     { .boxId = BOXUSER2,            .boxName = "USER2",             .permanentId = BOX_PERMANENT_ID_USER2 }, // 48
     { .boxId = BOXUSER3,            .boxName = "USER3",             .permanentId = BOX_PERMANENT_ID_USER3 }, // 57
     { .boxId = BOXUSER4,            .boxName = "USER4",             .permanentId = BOX_PERMANENT_ID_USER4 }, // 58
+#if MUX_FOR_OPFLOW_SWITCH
+    { .boxId = BOXLOITERDIRCHN,     .boxName = "OPFLOW SWITCH",     .permanentId = 49 }, // omri - use this for OPFLOW switch  
+#else
     { .boxId = BOXLOITERDIRCHN,     .boxName = "LOITER CHANGE",     .permanentId = 49 },
+#endif	
     { .boxId = BOXMSPRCOVERRIDE,    .boxName = "MSP RC OVERRIDE",   .permanentId = 50 },
     { .boxId = BOXPREARM,           .boxName = "PREARM",            .permanentId = 51 },
     { .boxId = BOXTURTLE,           .boxName = "TURTLE",            .permanentId = 52 },
@@ -214,6 +220,11 @@ void initActiveBoxIds(void)
         ADD_ACTIVE_BOX(BOXFPVANGLEMIX);
     }
 
+#if MUX_FOR_OPFLOW_SWITCH
+    // omri - use this one for OPFLOW switch 
+    ADD_ACTIVE_BOX(BOXLOITERDIRCHN);
+#endif
+
     bool navReadyAltControl = sensors(SENSOR_BARO);
 #ifdef USE_GPS
     navReadyAltControl = navReadyAltControl || (feature(FEATURE_GPS) && (STATE(AIRPLANE) || positionEstimationConfig()->use_gps_no_baro));
@@ -223,9 +234,11 @@ void initActiveBoxIds(void)
 
     if (STATE(ALTITUDE_CONTROL) && navReadyAltControl && (navReadyPosControl || navFlowDeadReckoning)) {
         ADD_ACTIVE_BOX(BOXNAVPOSHOLD);
+#if !MUX_FOR_OPFLOW_SWITCH
         if (STATE(AIRPLANE)) {
             ADD_ACTIVE_BOX(BOXLOITERDIRCHN);
         }
+#endif
     }
 
     if (navReadyPosControl) {

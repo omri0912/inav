@@ -56,6 +56,8 @@
 
 #include "sensors/battery.h"
 
+#include "flyz.h"
+
 // Base frequencies for smoothing pitch and roll
 #define NAV_FW_BASE_PITCH_CUTOFF_FREQUENCY_HZ     2.0f
 #define NAV_FW_BASE_ROLL_CUTOFF_FREQUENCY_HZ     10.0f
@@ -262,9 +264,11 @@ static int8_t loiterDirection(void) {
         dir = loiterDirYaw;
     }
 
+#if !MUX_FOR_OPFLOW_SWITCH // omri - use this for OPFLOW switch  
     if (IS_RC_MODE_ACTIVE(BOXLOITERDIRCHN)) {
         dir *= -1;
     }
+#endif
 
     return dir;
 }

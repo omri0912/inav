@@ -53,6 +53,8 @@
 
 #include "sensors/battery.h"
 
+#include "flyz.h"
+
 /*-----------------------------------------------------------
  * Altitude controller for multicopter aircraft
  *-----------------------------------------------------------*/
@@ -124,10 +126,39 @@ static void updateAltitudeThrottleController_MC(timeDelta_t deltaMicros)
     posControl.rcAdjustment[THROTTLE] = setDesiredThrottle(currentBatteryProfile->nav.mc.hover_throttle + rcThrottleCorrection, false);
 }
 
+#if SCALE_ALTITUDE_AT_ALTHOLD
+static uint16_t flyz_max_terrain_follow_altitude = 200; // 2m
+
+// set default to match cli settings 
+void flyz_throttle_span_init(void)
+{
+    flyz_max_terrain_follow_altitude = navConfig()->general.max_terrain_follow_altitude;
+}
+
+void flyz_throttle_span_calculate(bool useTerrainFollowing)
+{
+    // during surface navigation - adjust the throttle span when entering alt hold to achieve smooth transition 
+    flyz_throttle_span_init();
+    if ( useTerrainFollowing ) {
+        int throttle_span = motorConfig()->maxthrottle - getThrottleIdleValue();
+        int throttle = rcCommand[THROTTLE] - getThrottleIdleValue();
+        if ( throttle>0 && throttle<=throttle_span ) {
+            float percent = (float)throttle / (float)throttle_span;
+            flyz_max_terrain_follow_altitude = (uint16_t)(mtf_01_get_move_cm(2) / percent + 0.5);
+        }
+    }
+}
+#endif
+
 bool adjustMulticopterAltitudeFromRCInput(void)
 {
     if (posControl.flags.isTerrainFollowEnabled) {
+
+#if SCALE_ALTITUDE_AT_ALTHOLD
+        const float altTarget = scaleRangef(rcCommand[THROTTLE], getThrottleIdleValue(), motorConfig()->maxthrottle, 0, flyz_max_terrain_follow_altitude);
+#else
         const float altTarget = scaleRangef(rcCommand[THROTTLE], getThrottleIdleValue(), motorConfig()->maxthrottle, 0, navConfig()->general.max_terrain_follow_altitude);
+#endif        
 
         // In terrain follow mode we apply different logic for terrain control
         if (posControl.flags.estAglStatus == EST_TRUSTED && altTarget > 10.0f) {

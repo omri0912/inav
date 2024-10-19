@@ -40,7 +40,6 @@
 
 #include "sensors/rangefinder.h"
 #include "sensors/barometer.h"
-#include "flyz.h"
 
 extern navigationPosEstimator_t posEstimator;
 

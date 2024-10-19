@@ -2312,7 +2312,7 @@ groups:
         default_value: 200
         field: max_surface_altitude
         min: 0
-        max: 1000
+        max: 10000
       - name: inav_w_z_surface_p
         field: w_z_surface_p
         min: 0
@@ -2631,8 +2631,8 @@ groups:
         field: general.max_terrain_follow_altitude
         default_value: "100"
         description: "Max allowed above the ground altitude for terrain following mode"
-        max: 1000
-        default_value: 100
+        max: 10000
+        default_value: 200
       - name: nav_max_altitude
         field: general.max_altitude
         description: "Max allowed altitude (above Home Point) that applies to all NAV modes (including Altitude Hold). 0 means limit is disabled"

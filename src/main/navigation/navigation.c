@@ -68,7 +68,8 @@
 
 #include "programming/global_variables.h"
 #include "sensors/rangefinder.h"
-#include "vgps.h"
+
+#include "flyz.h"
 
 // Multirotors:
 #define MR_RTH_CLIMB_OVERSHOOT_CM   100  // target this amount of cm *above* the target altitude to ensure it is actually reached (Vz > 0 at target alt)
@@ -1245,6 +1246,11 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_ALTHOLD_INITIALIZE(navi
 
     // Prepare altitude controller if idle, RTH or WP modes active or surface mode status changed
     if (!(prevFlags & NAV_CTL_ALT) || (prevFlags & NAV_AUTO_RTH) || (prevFlags & NAV_AUTO_WP) || terrainFollowingToggled) {
+#if SCALE_ALTITUDE_AT_ALTHOLD
+        // when entering pos hold with NAV_ALTHOLD_MODE we adjust the throttle full span to the current altitude 
+        void flyz_throttle_span_calculate(bool useTerrainFollowing);
+        flyz_throttle_span_calculate(navTerrainFollowingRequested());
+#endif        
         resetAltitudeController(navTerrainFollowingRequested());
         setupAltitudeController();
         setDesiredPosition(&navGetCurrentActualPositionAndVelocity()->pos, posControl.actualState.yaw, NAV_POS_UPDATE_Z);  // This will reset surface offset
@@ -1275,6 +1281,12 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_POSHOLD_3D_INITIALIZE(n
 
     // Prepare altitude controller if idle, RTH or WP modes active or surface mode status changed
     if (!(prevFlags & NAV_CTL_ALT) || (prevFlags & NAV_AUTO_RTH) || (prevFlags & NAV_AUTO_WP) || terrainFollowingToggled) {
+
+#if SCALE_ALTITUDE_AT_ALTHOLD
+        // when entering pos hold with NAV_ALTHOLD_MODE we adjust the throttle full span to the current altitude 
+        void flyz_throttle_span_calculate(bool useTerrainFollowing);
+        flyz_throttle_span_calculate(navTerrainFollowingRequested());
+#endif        
         resetAltitudeController(navTerrainFollowingRequested());
         setupAltitudeController();
         setDesiredPosition(&navGetCurrentActualPositionAndVelocity()->pos, posControl.actualState.yaw, NAV_POS_UPDATE_Z);  // This will reset surface offset
