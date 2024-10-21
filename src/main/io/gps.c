@@ -61,6 +61,8 @@
 #include "fc/runtime_config.h"
 #include "fc/settings.h"
 
+#include "flyz.h"
+
 typedef struct {
     bool                isDriverBased;
     portMode_t          portMode;           // Port mode RX/TX (only for serial based)
@@ -203,10 +205,43 @@ void gpsSetProtocolTimeout(timeMs_t timeoutMs)
     gpsState.timeoutMs = timeoutMs;
 }
 
-void gpsProcessNewSolutionData(void)
+#if DISABLE_GPS_AT_ALTHOLD
+static bool flyz_is_surface_enabled = false;
+static int32_t flyz_gps_alt_min = 99999;
+static void gpsUpdateFix(void);
+void flyz_gps_refresh(bool is_surface_enabled)
+{
+    // if surface enabling has changed 
+    if ( flyz_is_surface_enabled != is_surface_enabled ) {
+
+        // if we're disabling gps now - force the delta GPS as AGL 
+        if ( !flyz_is_surface_enabled && gpsSol.llh.alt > flyz_gps_alt_min ) {
+            flyz_set_agl(gpsSol.llh.alt - flyz_gps_alt_min);
+        }
+
+        // new disable/enable value 
+        flyz_is_surface_enabled = is_surface_enabled;
+
+        // refresh fix accordingly 
+        gpsUpdateFix();
+    }
+}
+
+bool flyz_is_gps_enable(void)
+{
+    return flyz_is_surface_enabled ? false : true;
+}
+#endif
+
+static void gpsUpdateFix(void)
 {
     // Set GPS fix flag only if we have 3D fix
-    if (gpsSol.fixType == GPS_FIX_3D && gpsSol.numSat >= gpsConfig()->gpsMinSats) {
+#if DISABLE_GPS_AT_ALTHOLD
+    if ( !flyz_is_surface_enabled && gpsSol.fixType == GPS_FIX_3D && gpsSol.numSat >= gpsConfig()->gpsMinSats ) 
+#else        
+    if (gpsSol.fixType == GPS_FIX_3D && gpsSol.numSat >= gpsConfig()->gpsMinSats) 
+#endif    
+    {
         ENABLE_STATE(GPS_FIX);
     }
     else {
@@ -216,6 +251,27 @@ void gpsProcessNewSolutionData(void)
         gpsSol.flags.validEPE = false;
         DISABLE_STATE(GPS_FIX);
     }
+
+#if DISABLE_GPS_AT_ALTHOLD
+    // if fix is good 
+    if ( gpsSol.numSat>=8 ) {
+
+        // if we have new altitude that is lowere than the min - set new min 
+        if ( gpsSol.llh.alt < flyz_gps_alt_min ) {
+            flyz_gps_alt_min = gpsSol.llh.alt;
+        }
+    } 
+    
+    // if fix is not so good - no min 
+    else {
+        flyz_gps_alt_min = 99999;
+    }
+#endif    
+}
+
+void gpsProcessNewSolutionData(void)
+{
+    gpsUpdateFix();
 
     // Set sensor as ready and available
     sensorsSet(SENSOR_GPS);

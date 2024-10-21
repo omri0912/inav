@@ -38,7 +38,7 @@
 
 #include "rx/rx.h"
 
-#include "vgps.h"
+#include "flyz.h"
 
 static uint8_t specifiedConditionCountPerMode[CHECKBOX_ITEM_COUNT];
 static bool isUsingNAVModes = false;
@@ -199,6 +199,11 @@ void updateActivatedModes(void)
     }
 
     rcModeUpdate(&newMask);
+
+#if DISABLE_GPS_AT_ALTHOLD
+    // refresh the BOXSURFACE setting each time we have RX from the RC 
+    flyz_gps_refresh(IS_RC_MODE_ACTIVE(BOXSURFACE));
+#endif
 }
 
 void updateUsedModeActivationConditionFlags(void)

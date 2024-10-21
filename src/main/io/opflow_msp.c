@@ -42,6 +42,7 @@
 #include <string.h>
 #include "flight/imu.h"
 #include "sensors/opflow.h"
+#include "sensors/rangefinder.h"
 
 #define MICOLINK_MSG_HEAD            0xEF
 #define MICOLINK_MAX_PAYLOAD_LEN     64
@@ -259,6 +260,17 @@ float mtf_01_get_velocity_cm_sec(int i)
 {
     return mtf_01_vel_cm_sec[i];
 }
+
+#if DISABLE_GPS_AT_ALTHOLD
+void flyz_set_agl(int32_t gps_agl_guess_cm)
+{
+    // force new AGL for GPS 
+    if ( mtf_01_is_init ) {
+        mtf_01_move_cm[2] = (float)gps_agl_guess_cm;
+        (void)rangefinderProcess(1.0);
+    }
+}
+#endif
 
 void mtf_01_micolink_decode(serialPortIdentifier_e identifier, uint8_t data)
 {
