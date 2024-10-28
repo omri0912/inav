@@ -207,7 +207,6 @@ void gpsSetProtocolTimeout(timeMs_t timeoutMs)
 
 #if DISABLE_GPS_AT_ALTHOLD
 static bool flyz_is_surface_enabled = false;
-static int32_t flyz_gps_alt_min = 99999;
 static void gpsUpdateFix(void);
 void flyz_gps_refresh(bool is_surface_enabled)
 {
@@ -215,8 +214,8 @@ void flyz_gps_refresh(bool is_surface_enabled)
     if ( flyz_is_surface_enabled != is_surface_enabled ) {
 
         // if we're disabling gps now - force the delta GPS as AGL 
-        if ( !flyz_is_surface_enabled && gpsSol.llh.alt > flyz_gps_alt_min ) {
-            flyz_set_agl(gpsSol.llh.alt - flyz_gps_alt_min);
+        if ( !flyz_is_surface_enabled ) {
+            flyz_set_agl();
         }
 
         // new disable/enable value 
@@ -251,22 +250,6 @@ static void gpsUpdateFix(void)
         gpsSol.flags.validEPE = false;
         DISABLE_STATE(GPS_FIX);
     }
-
-#if DISABLE_GPS_AT_ALTHOLD
-    // if fix is good 
-    if ( gpsSol.numSat>=8 ) {
-
-        // if we have new altitude that is lowere than the min - set new min 
-        if ( gpsSol.llh.alt < flyz_gps_alt_min ) {
-            flyz_gps_alt_min = gpsSol.llh.alt;
-        }
-    } 
-    
-    // if fix is not so good - no min 
-    else {
-        flyz_gps_alt_min = 99999;
-    }
-#endif    
 }
 
 void gpsProcessNewSolutionData(void)

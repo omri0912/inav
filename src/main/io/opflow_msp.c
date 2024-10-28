@@ -264,11 +264,11 @@ float mtf_01_get_velocity_cm_sec(int i)
 }
 
 #if DISABLE_GPS_AT_ALTHOLD
-void flyz_set_agl(int32_t gps_agl_guess_cm)
+void flyz_set_agl(void)
 {
     // force new AGL for GPS 
     if ( mtf_01_is_init ) {
-        mtf_01_move_cm[2] = (float)gps_agl_guess_cm;
+        mtf_01_move_cm[2] = posControl.desiredState.pos.z;//posControl.actualState.agl.pos.z;//navGetCurrentActualPositionAndVelocity()->pos.z;
         (void)rangefinderProcess(1.0);
     }
 }

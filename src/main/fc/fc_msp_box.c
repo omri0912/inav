@@ -104,7 +104,11 @@ static const box_t boxes[CHECKBOX_ITEM_COUNT + 1] = {
     { .boxId = BOXTURTLE,           .boxName = "TURTLE",            .permanentId = 52 },
 #endif    
     { .boxId = BOXNAVCRUISE,        .boxName = "NAV CRUISE",        .permanentId = 53 },
+#if PITCH_AT_ALTHOLD 
+    { .boxId = BOXAUTOLEVEL,        .boxName = "PITCH AT HOLD",     .permanentId = 54 },
+#else    
     { .boxId = BOXAUTOLEVEL,        .boxName = "AUTO LEVEL TRIM",   .permanentId = 54 },
+#endif
     { .boxId = BOXPLANWPMISSION,    .boxName = "WP PLANNER",        .permanentId = 55 },
     { .boxId = BOXSOARING,          .boxName = "SOARING",           .permanentId = 56 },
     { .boxId = BOXCHANGEMISSION,    .boxName = "MISSION CHANGE",    .permanentId = 59 },
@@ -278,6 +282,10 @@ void initActiveBoxIds(void)
         platformTypeConfigured(PLATFORM_AIRPLANE) || platformTypeConfigured(PLATFORM_ROVER) || platformTypeConfigured(PLATFORM_BOAT)) {
         ADD_ACTIVE_BOX(BOXMANUAL);
     }
+
+#if PITCH_AT_ALTHOLD 
+    ADD_ACTIVE_BOX(BOXAUTOLEVEL);
+#endif        
 
     if (STATE(AIRPLANE) || platformTypeConfigured(PLATFORM_AIRPLANE)) {
         if (!feature(FEATURE_FW_LAUNCH)) {

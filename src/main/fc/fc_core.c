@@ -430,6 +430,12 @@ static void processPilotAndFailSafeActions(float dT)
             rcCommand[ROLL] = rcCommand[ROLL] * cosDiff - rcCommand[PITCH] * sinDiff;
             rcCommand[PITCH] = rcCommand_PITCH;
         }
+        
+#if PITCH_AT_ALTHOLD 
+        if ( IS_RC_MODE_ACTIVE(BOXAUTOLEVEL) ) {
+            rcCommand[PITCH] = 7;
+        }
+#endif
     }
 }
 

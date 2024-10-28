@@ -9,6 +9,7 @@
 #define MUX_FOR_OPFLOW_SWITCH       0 // [1] use swtich 49 to enable forward facing opflow (default down facing, must set SWITCH_OPFLOW_EVERY_10SEC to 0)
 #define SCALE_ALTITUDE_AT_ALTHOLD   1 // [1] during surface navigation - adjust the throttle span when entering alt hold to achieve smooth transition 
 #define DISABLE_GPS_AT_ALTHOLD      1 // [1] when swtiching to alt hold disable GPS and continue using surface navigation 
+#define PITCH_AT_ALTHOLD            0 // [1] when mux is enabled during pos hold --> do constant pitch adjustment 
 
 #include "io/serial.h"
 
@@ -20,6 +21,6 @@ float mtf_01_get_move_cm(int i);
 
 #if DISABLE_GPS_AT_ALTHOLD
 void flyz_gps_refresh(bool is_surface_enabled);
-void flyz_set_agl(int32_t gps_agl_guess_cm);
+void flyz_set_agl(void);
 bool flyz_is_gps_enable(void);
 #endif
