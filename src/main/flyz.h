@@ -6,9 +6,9 @@
 //#define VGPS                        // do  waypints navigation mission where the dorne flies 5m to a wall and back streaming virutal GPS data (UBLOX protocol) 
 
 #define SWITCH_OPFLOW_EVERY_10SEC   0 // [1] every 10 seconds switch between down/forwards facing opflow 
-#define MUX_FOR_OPFLOW_SWITCH       1 // [1] use swtich 49 to enable forward facing opflow (default down facing, must set SWITCH_OPFLOW_EVERY_10SEC to 0)
+#define MUX_FOR_OPFLOW_SWITCH       0 // [1] use swtich 49 to enable forward facing opflow (default down facing, must set SWITCH_OPFLOW_EVERY_10SEC to 0)
 #define SCALE_ALTITUDE_AT_ALTHOLD   1 // [1] during surface navigation - adjust the throttle span when entering alt hold to achieve smooth transition 
-#define DISABLE_GPS_AT_ALTHOLD      0 // [1] when swtiching to alt hold disable GPS and continue using surface navigation 
+#define DISABLE_GPS_AT_ALTHOLD      1 // [1] when swtiching to alt hold disable GPS and continue using surface navigation 
 
 #include "io/serial.h"
 

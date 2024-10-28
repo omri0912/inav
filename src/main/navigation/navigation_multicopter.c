@@ -142,9 +142,15 @@ void flyz_throttle_span_calculate(bool useTerrainFollowing)
     if ( useTerrainFollowing ) {
         int throttle_span = motorConfig()->maxthrottle - getThrottleIdleValue();
         int throttle = rcCommand[THROTTLE] - getThrottleIdleValue();
-        if ( throttle>0 && throttle<=throttle_span ) {
+        float alt_cm = mtf_01_get_move_cm(2);
+
+        // if altitude is below 10cm or throttle is below 10 pwm or throttle gone wild --> limit altitude to 1m 
+        if ( throttle<10 || alt_cm < 10 || throttle>throttle_span ) {
+            flyz_max_terrain_follow_altitude = 100;
+        }
+        else {
             float percent = (float)throttle / (float)throttle_span;
-            flyz_max_terrain_follow_altitude = (uint16_t)(mtf_01_get_move_cm(2) / percent + 0.5);
+            flyz_max_terrain_follow_altitude = (uint16_t)(alt_cm / percent + 0.5);
         }
     }
 }

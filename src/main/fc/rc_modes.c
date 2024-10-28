@@ -202,7 +202,7 @@ void updateActivatedModes(void)
 
 #if DISABLE_GPS_AT_ALTHOLD
     // refresh the BOXSURFACE setting each time we have RX from the RC 
-    flyz_gps_refresh(IS_RC_MODE_ACTIVE(BOXSURFACE));
+    flyz_gps_refresh(IS_RC_MODE_ACTIVE(BOXTURTLE));
 #endif
 }
 

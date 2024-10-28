@@ -95,6 +95,8 @@
 #include "common/vector.h"
 #include "programming/pid.h"
 
+#include "flyz.h"
+
 // June 2013     V2.2-dev
 
 enum {
@@ -539,10 +541,14 @@ void tryArm(void)
     }
 
 #ifdef USE_DSHOT
+#if DISABLE_GPS_AT_ALTHOLD
+    const bool turtleIsActive = false;
+#else    
 #ifdef USE_MULTI_FUNCTIONS
     const bool turtleIsActive = IS_RC_MODE_ACTIVE(BOXTURTLE) || MULTI_FUNC_FLAG(MF_TURTLE_MODE);
 #else
     const bool turtleIsActive = IS_RC_MODE_ACTIVE(BOXTURTLE);
+#endif
 #endif
     if (STATE(MULTIROTOR) && turtleIsActive && !FLIGHT_MODE(TURTLE_MODE) && emergencyArmingCanOverrideArmingDisabled() && isMotorProtocolDshot()) {
         sendDShotCommand(DSHOT_CMD_SPIN_DIRECTION_REVERSED);

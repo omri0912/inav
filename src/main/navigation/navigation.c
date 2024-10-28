@@ -1263,6 +1263,14 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_ALTHOLD_IN_PROGRESS(nav
 {
     UNUSED(previousState);
 
+#if DISABLE_GPS_AT_ALTHOLD
+    if ( navTerrainFollowingRequested() != posControl.flags.isTerrainFollowEnabled )
+    {
+        // force re-entrance to init state with fake state that will cause re initialization 
+        navOnEnteringState_NAV_STATE_ALTHOLD_INITIALIZE(NAV_STATE_IDLE);
+    }
+#endif
+
     // If GCS was disabled - reset altitude setpoint
     if (posControl.flags.isGCSAssistedNavigationReset) {
         setDesiredPosition(&navGetCurrentActualPositionAndVelocity()->pos, posControl.actualState.yaw, NAV_POS_UPDATE_Z);
@@ -1310,6 +1318,14 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_POSHOLD_3D_INITIALIZE(n
 static navigationFSMEvent_t navOnEnteringState_NAV_STATE_POSHOLD_3D_IN_PROGRESS(navigationFSMState_t previousState)
 {
     UNUSED(previousState);
+
+#if DISABLE_GPS_AT_ALTHOLD
+    if ( navTerrainFollowingRequested() != posControl.flags.isTerrainFollowEnabled )
+    {
+        // force re-entrance to init state with fake state that will cause re initialization 
+        navOnEnteringState_NAV_STATE_POSHOLD_3D_INITIALIZE(NAV_STATE_IDLE);
+    }
+#endif
 
     // If GCS was disabled - reset 2D pos setpoint
     if (posControl.flags.isGCSAssistedNavigationReset) {

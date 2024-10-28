@@ -98,7 +98,11 @@ static const box_t boxes[CHECKBOX_ITEM_COUNT + 1] = {
 #endif	
     { .boxId = BOXMSPRCOVERRIDE,    .boxName = "MSP RC OVERRIDE",   .permanentId = 50 },
     { .boxId = BOXPREARM,           .boxName = "PREARM",            .permanentId = 51 },
+#if DISABLE_GPS_AT_ALTHOLD
+    { .boxId = BOXTURTLE,           .boxName = "DISABLE GPS",       .permanentId = 52 },
+#else    
     { .boxId = BOXTURTLE,           .boxName = "TURTLE",            .permanentId = 52 },
+#endif    
     { .boxId = BOXNAVCRUISE,        .boxName = "NAV CRUISE",        .permanentId = 53 },
     { .boxId = BOXAUTOLEVEL,        .boxName = "AUTO LEVEL TRIM",   .permanentId = 54 },
     { .boxId = BOXPLANWPMISSION,    .boxName = "WP PLANNER",        .permanentId = 55 },
@@ -363,10 +367,14 @@ void initActiveBoxIds(void)
     ADD_ACTIVE_BOX(BOXMSPRCOVERRIDE);
 #endif
 
+#if DISABLE_GPS_AT_ALTHOLD
+    ADD_ACTIVE_BOX(BOXTURTLE);
+#else
 #ifdef USE_DSHOT
     if(STATE(MULTIROTOR) && isMotorProtocolDshot()) {
         ADD_ACTIVE_BOX(BOXTURTLE);
     }
+#endif
 #endif
 
 #if (MAX_MIXER_PROFILE_COUNT > 1)

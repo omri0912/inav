@@ -43,6 +43,8 @@
 #include "flight/imu.h"
 #include "sensors/opflow.h"
 #include "sensors/rangefinder.h"
+#include "navigation/navigation.h"
+#include "navigation/navigation_private.h"
 
 #define MICOLINK_MSG_HEAD            0xEF
 #define MICOLINK_MAX_PAYLOAD_LEN     64
@@ -416,6 +418,7 @@ void mtf_01_micolink_decode(serialPortIdentifier_e identifier, uint8_t data)
             DEBUG_SET(DEBUG_FLOW_RAW, 4, mtf_01_move_cm[1]);
             DEBUG_SET(DEBUG_FLOW_RAW, 5, mtf_01_move_cm[2]);
             
+            DEBUG_SET(DEBUG_FLOW, 6, IS_RC_MODE_ACTIVE(BOXTURTLE) );
 #if SWITCH_OPFLOW_EVERY_10SEC 
             uint32_t t = millis();
             static uint32_t timeout = 20000;
