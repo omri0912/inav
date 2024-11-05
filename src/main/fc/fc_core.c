@@ -384,6 +384,13 @@ static bool emergencyArmingIsEnabled(void)
     return emergencyArmingUpdate(IS_RC_MODE_ACTIVE(BOXARM), false) && emergencyArmingCanOverrideArmingDisabled();
 }
 
+#if PITCH_AT_ALTHOLD 
+static int16_t flyz_ref_pitch = 0;
+#if PITCH_AT_ALTHOLD==2            
+static int16_t flyz_roll_correction = 0;
+#endif
+#endif
+
 static void processPilotAndFailSafeActions(float dT)
 {
     if (failsafeShouldApplyControlInput()) {
@@ -391,9 +398,56 @@ static void processPilotAndFailSafeActions(float dT)
         failsafeApplyControlInput();
     }
     else {
+
+        int16_t pitch_1000_2000 = rxGetChannelValue(PITCH);
+        int16_t roll_1000_2000 = rxGetChannelValue(ROLL);
+#if PITCH_AT_ALTHOLD 
+        if ( IS_RC_MODE_ACTIVE(BOXAUTOLEVEL) ) {
+            if ( flyz_ref_pitch==0 ) {
+                flyz_ref_pitch = pitch_1000_2000; // save starting pos 
+            }
+            //int16_t pitch_angle_deci_degrees = (int16_t)attitude.values.pitch;
+#if 0 // set yaw_lpf_hz = 20 --> try to reach 20 degrees pitch angle 
+            static int16_t pitch_correction = 0;
+            const int16_t target_pitch = pidProfile()->yaw_lpf_hz; // pitch angle in deci degrees 
+            static float fpitch = 9999999;
+            if ( fpitch > 360.0 ) {
+                fpitch = pitch_angle_deci_degrees;
+            }
+            else {
+                fpitch = 0.9 * fpitch + pitch_angle_deci_degrees;
+            }
+            if ( fpitch < target_pitch-5 && pitch_correction < 100 ) {
+                pitch_correction++;           
+            }
+            else if ( fpitch > target_pitch+5 && pitch_correction > -100 ) {
+                pitch_correction--;           
+            }
+            pitch_1000_2000 = 1500 + pitch_correction; 
+#else
+            pitch_1000_2000 = pidProfile()->pidItermLimitPercent + (pitch_1000_2000-flyz_ref_pitch); 
+#if PITCH_AT_ALTHOLD==2            
+            if ( attitude.values.roll >= 10 ) {
+                flyz_roll_correction--;
+            }
+            else if ( attitude.values.roll <= -10 ) {
+                flyz_roll_correction++;
+            }
+            roll_1000_2000 += flyz_roll_correction;
+#endif            
+#endif            
+        }
+        else {
+            flyz_ref_pitch = 0;
+#if PITCH_AT_ALTHOLD==2            
+            flyz_roll_correction = 0;
+#endif
+        }
+#endif
+
         // Compute ROLL PITCH and YAW command
-        rcCommand[ROLL] = getAxisRcCommand(rxGetChannelValue(ROLL), FLIGHT_MODE(MANUAL_MODE) ? currentControlRateProfile->manual.rcExpo8 : currentControlRateProfile->stabilized.rcExpo8, rcControlsConfig()->deadband);
-        rcCommand[PITCH] = getAxisRcCommand(rxGetChannelValue(PITCH), FLIGHT_MODE(MANUAL_MODE) ? currentControlRateProfile->manual.rcExpo8 : currentControlRateProfile->stabilized.rcExpo8, rcControlsConfig()->deadband);
+        rcCommand[ROLL] = getAxisRcCommand(roll_1000_2000, FLIGHT_MODE(MANUAL_MODE) ? currentControlRateProfile->manual.rcExpo8 : currentControlRateProfile->stabilized.rcExpo8, rcControlsConfig()->deadband);
+        rcCommand[PITCH] = getAxisRcCommand(pitch_1000_2000, FLIGHT_MODE(MANUAL_MODE) ? currentControlRateProfile->manual.rcExpo8 : currentControlRateProfile->stabilized.rcExpo8, rcControlsConfig()->deadband);
         rcCommand[YAW] = -getAxisRcCommand(rxGetChannelValue(YAW), FLIGHT_MODE(MANUAL_MODE) ? currentControlRateProfile->manual.rcYawExpo8 : currentControlRateProfile->stabilized.rcYawExpo8, rcControlsConfig()->yaw_deadband);
 
         // Apply manual control rates
@@ -430,12 +484,6 @@ static void processPilotAndFailSafeActions(float dT)
             rcCommand[ROLL] = rcCommand[ROLL] * cosDiff - rcCommand[PITCH] * sinDiff;
             rcCommand[PITCH] = rcCommand_PITCH;
         }
-        
-#if PITCH_AT_ALTHOLD 
-        if ( IS_RC_MODE_ACTIVE(BOXAUTOLEVEL) ) {
-            rcCommand[PITCH] = 7;
-        }
-#endif
     }
 }
 

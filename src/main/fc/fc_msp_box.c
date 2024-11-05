@@ -92,20 +92,20 @@ static const box_t boxes[CHECKBOX_ITEM_COUNT + 1] = {
     { .boxId = BOXUSER3,            .boxName = "USER3",             .permanentId = BOX_PERMANENT_ID_USER3 }, // 57
     { .boxId = BOXUSER4,            .boxName = "USER4",             .permanentId = BOX_PERMANENT_ID_USER4 }, // 58
 #if MUX_FOR_OPFLOW_SWITCH
-    { .boxId = BOXLOITERDIRCHN,     .boxName = "OPFLOW SWITCH",     .permanentId = 49 }, // omri - use this for OPFLOW switch  
+    { .boxId = BOXLOITERDIRCHN,     .boxName = "FLYZ OPFLW SWTCH",  .permanentId = 49 }, // omri - use this for OPFLOW switch  
 #else
     { .boxId = BOXLOITERDIRCHN,     .boxName = "LOITER CHANGE",     .permanentId = 49 },
 #endif	
     { .boxId = BOXMSPRCOVERRIDE,    .boxName = "MSP RC OVERRIDE",   .permanentId = 50 },
     { .boxId = BOXPREARM,           .boxName = "PREARM",            .permanentId = 51 },
 #if DISABLE_GPS_AT_ALTHOLD
-    { .boxId = BOXTURTLE,           .boxName = "DISABLE GPS",       .permanentId = 52 },
+    { .boxId = BOXTURTLE,           .boxName = "FLYZ NO GPS",       .permanentId = 52 },
 #else    
     { .boxId = BOXTURTLE,           .boxName = "TURTLE",            .permanentId = 52 },
 #endif    
     { .boxId = BOXNAVCRUISE,        .boxName = "NAV CRUISE",        .permanentId = 53 },
 #if PITCH_AT_ALTHOLD 
-    { .boxId = BOXAUTOLEVEL,        .boxName = "PITCH AT HOLD",     .permanentId = 54 },
+    { .boxId = BOXAUTOLEVEL,        .boxName = "FLYZ PITCH CTRL",   .permanentId = 54 },
 #else    
     { .boxId = BOXAUTOLEVEL,        .boxName = "AUTO LEVEL TRIM",   .permanentId = 54 },
 #endif

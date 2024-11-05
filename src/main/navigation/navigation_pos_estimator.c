@@ -520,7 +520,7 @@ static uint32_t calculateCurrentValidityFlags(timeUs_t currentTimeUs)
     uint32_t newFlags = 0;
 
     if (sensors(SENSOR_GPS) && posControl.gpsOrigin.valid &&  
-#if DISABLE_GPS_AT_ALTHOLD
+#if DISABLE_GPS_AT_ALTHOLD<3 
         flyz_is_gps_enable() && 
 #endif        
         ((currentTimeUs - posEstimator.gps.lastUpdateTime) <= MS2US(INAV_GPS_TIMEOUT_MS)) &&

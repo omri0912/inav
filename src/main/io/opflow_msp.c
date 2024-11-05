@@ -263,12 +263,19 @@ float mtf_01_get_velocity_cm_sec(int i)
     return mtf_01_vel_cm_sec[i];
 }
 
-#if DISABLE_GPS_AT_ALTHOLD
+#if DISABLE_GPS_AT_ALTHOLD<3 || DISABLE_GPS_AT_ALTHOLD==5
 void flyz_set_agl(void)
 {
     // force new AGL for GPS 
     if ( mtf_01_is_init ) {
-        mtf_01_move_cm[2] = posControl.desiredState.pos.z;//posControl.actualState.agl.pos.z;//navGetCurrentActualPositionAndVelocity()->pos.z;
+#if USE_ABS_POS_WHEN_ENTERING_SURFACE_HOLD
+        memcpy(&posControl.actualState.agl,&posControl.actualState.abs,sizeof(navEstimatedPosVel_t));
+        mtf_01_move_cm[0] = posControl.actualState.abs.pos.x;
+        mtf_01_move_cm[1] = posControl.actualState.abs.pos.y;
+        mtf_01_move_cm[2] = posControl.actualState.abs.pos.z;
+#else    
+        mtf_01_move_cm[2] = posControl.actualState.abs.pos.z; // posControl.desiredState.pos.z;//posControl.actualState.agl.pos.z;//navGetCurrentActualPositionAndVelocity()->pos.z;
+#endif    
         (void)rangefinderProcess(1.0);
     }
 }

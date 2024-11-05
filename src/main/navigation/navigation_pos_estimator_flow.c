@@ -82,8 +82,13 @@ bool estimationCalculateCorrection_XY_FLOW(estimationContext_t * ctx)
 
         // opflow_scale = 111.0 --> [1/2]=signy [1/2]=signx [1/2]=is_flip_xy default=110 
         float mtf_01_get_velocity_cm_sec(int i);
-        flowVel.x = mtf_01_get_velocity_cm_sec(1); // -Y 
-        flowVel.y = -1.0*(mtf_01_get_velocity_cm_sec(0)); // +X
+#if INAV_BODY2EARTH_FRAME 
+        flowVel.x = -mtf_01_get_velocity_cm_sec(1); // x=-Y 
+        flowVel.y =  mtf_01_get_velocity_cm_sec(0); // y=+X
+#else
+        flowVel.x = mtf_01_get_velocity_cm_sec(1); // x=+Y 
+        flowVel.y = -1.0*(mtf_01_get_velocity_cm_sec(0)); // y=-X
+#endif        
         flowVel.z =  mtf_01_get_velocity_cm_sec(2);  // +Z
         static float x = 0.0;
         static float y = 0.0;

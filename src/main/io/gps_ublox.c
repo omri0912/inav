@@ -705,6 +705,9 @@ static bool gpsParseFrameUBLOX(void)
     vGpsFake();
 #endif
 
+    void gpsUpdateFixRt(void);
+    gpsUpdateFixRt();
+    
     // we only return true when we get new position and speed data
     // this ensures we don't use stale data
     if (_new_position && _new_speed) {

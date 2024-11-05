@@ -1263,7 +1263,7 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_ALTHOLD_IN_PROGRESS(nav
 {
     UNUSED(previousState);
 
-#if DISABLE_GPS_AT_ALTHOLD
+#if DISABLE_GPS_AT_ALTHOLD==1 || DISABLE_GPS_AT_ALTHOLD==5
     if ( navTerrainFollowingRequested() != posControl.flags.isTerrainFollowEnabled )
     {
         // force re-entrance to init state with fake state that will cause re initialization 
@@ -1319,7 +1319,7 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_POSHOLD_3D_IN_PROGRESS(
 {
     UNUSED(previousState);
 
-#if DISABLE_GPS_AT_ALTHOLD
+#if DISABLE_GPS_AT_ALTHOLD==1 || DISABLE_GPS_AT_ALTHOLD==5
     if ( navTerrainFollowingRequested() != posControl.flags.isTerrainFollowEnabled )
     {
         // force re-entrance to init state with fake state that will cause re initialization 

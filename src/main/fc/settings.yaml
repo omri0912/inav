@@ -1982,7 +1982,7 @@ groups:
         default_value: 33
         field: pidItermLimitPercent
         min: 0
-        max: 200
+        max: 2000
       - name: rate_accel_limit_roll_pitch
         description: "Limits acceleration of ROLL/PITCH rotation speed that can be requested by stick input. In degrees-per-second-squared. Small and powerful UAV flies great with high acceleration limit ( > 5000 dps^2 and even > 10000 dps^2). Big and heavy multirotors will benefit from low acceleration limit (~ 360 dps^2). When set correctly, it greatly improves stopping performance. Value of 0 disables limiting."
         default_value: 0

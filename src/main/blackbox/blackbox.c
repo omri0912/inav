@@ -1216,8 +1216,8 @@ static void writeInterframe(void)
      * NAV_POS fields
      */
     if (testBlackboxCondition(FLIGHT_LOG_FIELD_CONDITION_NAV_POS)) {
-        blackboxWriteSignedVB(blackboxCurrent->navEPH - blackboxLast->navEPH);
-        blackboxWriteSignedVB(blackboxCurrent->navEPV - blackboxLast->navEPV);
+        blackboxWriteSignedVB(gpsSol.numSat/*blackboxCurrent->navEPH - blackboxLast->navEPH*/);
+        blackboxWriteSignedVB(IS_RC_MODE_ACTIVE(BOXTURTLE)/*->navEPV - blackboxLast->navEPV*/);
 
         for (int x = 0; x < XYZ_AXIS_COUNT; x++) {
             blackboxWriteSignedVB(blackboxCurrent->navPos[x] - blackboxLast->navPos[x]);
