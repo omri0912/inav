@@ -558,7 +558,7 @@ STATIC_UNIT_TESTED void imuUpdateEulerAngles(void)
 	else
 #endif
 	{
-		/* Compute pitch/roll angles omri-z */
+		/* Compute pitch/roll angles */
 		attitude.values.roll = RADIANS_TO_DECIDEGREES(atan2_approx(rMat[2][1], rMat[2][2]));
 		attitude.values.pitch = RADIANS_TO_DECIDEGREES((0.5f * M_PIf) - acos_approx(-rMat[2][0]));
 		attitude.values.yaw = RADIANS_TO_DECIDEGREES(-atan2_approx(rMat[1][0], rMat[0][0]));
@@ -689,8 +689,8 @@ static void imuCalculateTurnRateacceleration(fpVector3_t *vEstcentrifugalAccelBF
 #endif
     if (currentspeed < 0)
     {
-        //third choice is fixedWingReferenceAirspeed
-        currentspeed = pidProfile()->fixedWingReferenceAirspeed;
+        //third choice is 1500
+        currentspeed = 1500;
         *acc_ignore_slope_multipiler = 1.0f;
     }
     float speed_change = lastspeed > 0 ? currentspeed - lastspeed : 0;

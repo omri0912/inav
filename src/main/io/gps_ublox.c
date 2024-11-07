@@ -52,7 +52,7 @@
 
 #include "gps_ublox.h"
 #include "gps_ublox_utils.h"
-#include "vgps.h"
+#include "flyz.h"
 
 
 // SBAS_AUTO, SBAS_EGNOS, SBAS_WAAS, SBAS_MSAS, SBAS_GAGAN, SBAS_NONE
@@ -705,8 +705,10 @@ static bool gpsParseFrameUBLOX(void)
     vGpsFake();
 #endif
 
+#if DISABLE_GPS_AT_ALTHOLD
     void gpsUpdateFixRt(void);
     gpsUpdateFixRt();
+#endif
     
     // we only return true when we get new position and speed data
     // this ensures we don't use stale data

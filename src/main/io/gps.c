@@ -15,34 +15,6 @@
  * along with Cleanflight.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
-#include <stdbool.h>
-#include <stdint.h>
-#include <math.h>
-
-#include "platform.h"
-
-#include "build/build_config.h"
-#include "build/debug.h"
-
-#include "common/axis.h"
-#include "common/maths.h"
-#include "common/filter.h"
-
-#include "drivers/time.h"
-
-#include "sensors/sensors.h"
-#include "sensors/acceleration.h"
-#include "sensors/boardalignment.h"
-#include "sensors/gyro.h"
-#include "sensors/pitotmeter.h"
-
-#include "flight/pid.h"
-#include "flight/imu.h"
-#include "flight/mixer.h"
-#include "flight/mixer_profile.h"
-
-
 #include <stdbool.h>
 #include <stdint.h>
 #include <ctype.h>
@@ -50,6 +22,7 @@
 
 #include "platform.h"
 #include "build/build_config.h"
+#include "common/axis.h"
 #include "flight/pid.h"
 
 #ifdef USE_GPS
@@ -234,81 +207,99 @@ void gpsSetProtocolTimeout(timeMs_t timeoutMs)
 }
 
 #if DISABLE_GPS_AT_ALTHOLD
-#if DISABLE_GPS_AT_ALTHOLD>=4
+
+// variables to do the timing and control of the gps disabling 
 static uint32_t flyz_disable_gps_timeout = 0xFFFFFFFFU;
 static uint32_t flyz_disable_gps_timeout_step = 0;
 static uint32_t flyz_disable_gps_num_sat = 0;
-#endif
-bool flyz_is_surface_enabled = false;
+
+// current status of gps disabling 
+bool flyz_disable_gps = false;
+
+// refresh fix 
 static void gpsUpdateFix(void);
-void flyz_gps_refresh(bool is_surface_enabled)
+
+// called with the current value of BOXTURTLE - when on it enables gps disabling 
+void flyz_gps_refresh(bool disable_gps)
 {
     // if surface enabling has changed 
-    if ( flyz_is_surface_enabled != is_surface_enabled ) {
+    if ( flyz_disable_gps != disable_gps ) {
 
         // if we're disabling gps now - force the delta GPS as AGL 
-        if ( !flyz_is_surface_enabled ) {
-#if DISABLE_GPS_AT_ALTHOLD<3 || DISABLE_GPS_AT_ALTHOLD==5
-            flyz_set_agl();
-#endif
-#if DISABLE_GPS_AT_ALTHOLD>=4
-            if ( pidProfile()->axisAccelerationLimitRollPitch>=100 ) {
-                flyz_disable_gps_num_sat = pidProfile()->axisAccelerationLimitRollPitch - 100;
+        if ( !flyz_disable_gps ) {
+
+            // check if disabling gps requires surface action as well 
+            flyz_surface_action_when_leaving_gps_poshold();
+
+            // check what to do per CLI 'flyz_min_num_sat'
+            if ( pidProfile()->flyz_min_num_sat_value<200 ) {
+
+                // immediate swtich to goven nuber of gps 
+                if ( pidProfile()->flyz_sat_decay_val==0 ) {
+                    flyz_disable_gps_num_sat = pidProfile()->flyz_min_num_sat_value;
+                }
+
+                // gradual swtich over 10 seconds 
+                else if ( gpsSol.numSat > pidProfile()->flyz_min_num_sat_value ) {
+                    flyz_disable_gps_timeout_step = 1000*pidProfile()->flyz_sat_decay_val / (gpsSol.numSat-pidProfile()->flyz_min_num_sat_value);
+                    flyz_disable_gps_timeout = millis() + flyz_disable_gps_timeout_step;
+                    flyz_disable_gps_num_sat = gpsSol.numSat;
+                }
             }
-            else if ( gpsSol.numSat > pidProfile()->axisAccelerationLimitRollPitch ) {
-                flyz_disable_gps_timeout_step = 10000 / (gpsSol.numSat-pidProfile()->axisAccelerationLimitRollPitch);
-                flyz_disable_gps_timeout = millis() + flyz_disable_gps_timeout_step;
-                flyz_disable_gps_num_sat = gpsSol.numSat;
-            }
-#endif
         }
 
         // new disable/enable value 
-        flyz_is_surface_enabled = is_surface_enabled;
+        flyz_disable_gps = disable_gps;
 
         // refresh fix accordingly 
         gpsUpdateFix();
     }
 }
 
+// getter 
 bool flyz_is_gps_enable(void)
 {
-    return flyz_is_surface_enabled ? false : true;
+    return flyz_disable_gps ? false : true;
 }
-#endif
 
+// quick setter of numSat 
 void gpsUpdateFixRt(void)
 {
-#if DISABLE_GPS_AT_ALTHOLD>=4
-    if ( flyz_is_surface_enabled ) {
+    if ( flyz_disable_gps ) {
         gpsSol.numSat = flyz_disable_gps_num_sat;
     }
-#endif
 }
+#endif
 
 static void gpsUpdateFix(void)
 {
-#if DISABLE_GPS_AT_ALTHOLD>=4
-    if ( flyz_is_surface_enabled ) {
+#if DISABLE_GPS_AT_ALTHOLD
+
+    // if gps disable logic is ongoing 
+    if ( flyz_disable_gps ) {
+
+        // if timeout expires 
         if ( millis() >= flyz_disable_gps_timeout ) {
-            if ( flyz_disable_gps_num_sat>pidProfile()->axisAccelerationLimitRollPitch ) {
+
+            // if we still need to clear satellites - remove one 
+            if ( flyz_disable_gps_num_sat>pidProfile()->flyz_min_num_sat_value ) {
                 flyz_disable_gps_num_sat--;
-                flyz_disable_gps_timeout += flyz_disable_gps_timeout_step;
+                flyz_disable_gps_timeout += flyz_disable_gps_timeout_step; // next timout 
             }
+
+            // we're done removing 
             else {
                 flyz_disable_gps_timeout = 0xFFFFFFFFU;
             }
         }
+
+        // force satellites 
         gpsSol.numSat = flyz_disable_gps_num_sat;
     }
 #endif
    
     // Set GPS fix flag only if we have 3D fix
-#if DISABLE_GPS_AT_ALTHOLD<4
-    if ( !flyz_is_surface_enabled && gpsSol.fixType == GPS_FIX_3D && gpsSol.numSat >= gpsConfig()->gpsMinSats ) 
-#else        
     if (gpsSol.fixType == GPS_FIX_3D && gpsSol.numSat >= gpsConfig()->gpsMinSats) 
-#endif    
     {
         ENABLE_STATE(GPS_FIX);
     }
@@ -317,7 +308,7 @@ static void gpsUpdateFix(void)
         gpsSol.flags.validVelNE = false;
         gpsSol.flags.validVelD = false;
         gpsSol.flags.validEPE = false;
-        DISABLE_STATE(GPS_FIX);
+        DISABLE_STATE(GPS_FIX); 
     }
 }
 

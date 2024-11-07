@@ -968,3 +968,52 @@ bool vGpsParseFrame(void)
 }
 
 #endif // ifdef VGPS
+
+#if AUTO_MUX 
+
+#define AUTO_MUX_MAX 10 
+
+typedef struct {
+    boxId_e mux;
+    bool    is_on;
+} flyz_mux_type;
+
+static uint8_t flyz_mux_table_cnt = 0;
+
+static flyz_mux_type flyz_mux_table[AUTO_MUX_MAX] = { 0 };
+
+// fake aux by overriding booleans 
+bool flyz_auto_mux_is_on(boxId_e boxId) 
+{
+    // look for a mtch and return value 
+    for ( int i=0; i<flyz_mux_table_cnt; i++ ) {
+        if ( flyz_mux_table[i].mux==boxId ) {
+            return flyz_mux_table[i].is_on;
+        }
+    }
+
+    // if no match - return true MUX value 
+    extern boxBitmask_t rcModeActivationMask;
+    return bitArrayGet(rcModeActivationMask.bits, boxId);
+} 
+
+// fake aux by overriding booleans 
+void flyz_auto_mux_set(boxId_e boxId, bool is_on) 
+{
+    // look for an existing mux match 
+    for ( int i=0; i<flyz_mux_table_cnt; i++ ) {
+        if ( flyz_mux_table[i].mux==boxId ) {
+            flyz_mux_table[i].is_on = is_on; // set value 
+            return;
+        }
+    }
+
+    // auto add new mux at runtime 
+    if ( flyz_mux_table_cnt < AUTO_MUX_MAX ) {
+        flyz_mux_table[flyz_mux_table_cnt].mux = boxId;
+        flyz_mux_table[flyz_mux_table_cnt].is_on = is_on;
+        flyz_mux_table_cnt++;
+    }
+} 
+
+#endif

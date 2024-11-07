@@ -126,7 +126,6 @@ static void updateAltitudeThrottleController_MC(timeDelta_t deltaMicros)
     posControl.rcAdjustment[THROTTLE] = setDesiredThrottle(currentBatteryProfile->nav.mc.hover_throttle + rcThrottleCorrection, false);
 }
 
-#if SCALE_ALTITUDE_AT_ALTHOLD
 static uint16_t flyz_max_terrain_follow_altitude = 200; // 2m
 
 // set default to match cli settings 
@@ -140,31 +139,29 @@ void flyz_throttle_span_calculate(bool useTerrainFollowing)
     // during surface navigation - adjust the throttle span when entering alt hold to achieve smooth transition 
     flyz_throttle_span_init();
     if ( useTerrainFollowing ) {
-        int throttle_span = motorConfig()->maxthrottle - getThrottleIdleValue();
-        int throttle = rcCommand[THROTTLE] - getThrottleIdleValue();
-        float alt_cm = mtf_01_get_move_cm(2);
 
-        // if altitude is below 10cm or throttle is below 10 pwm or throttle gone wild --> limit altitude to 1m 
-        if ( throttle<10 || alt_cm < 10 || throttle>throttle_span ) {
-            flyz_max_terrain_follow_altitude = 100;
-        }
-        else {
-            float percent = (float)throttle / (float)throttle_span;
-            flyz_max_terrain_follow_altitude = (uint16_t)(alt_cm / percent + 0.5);
+        if ( pidProfile()->flyz_config_val & FLYZ_CONFIG_MASK_SCALE_THROTTLE ) {
+            int throttle_span = motorConfig()->maxthrottle - getThrottleIdleValue();
+            int throttle = rcCommand[THROTTLE] - getThrottleIdleValue();
+            float alt_cm = mtf_01_get_move_cm(2);
+
+            // if altitude is below 10cm or throttle is below 10 pwm or throttle gone wild --> limit altitude to 1m 
+            if ( throttle<10 || alt_cm < 10 || throttle>throttle_span ) {
+                flyz_max_terrain_follow_altitude = 100;
+            }
+            else {
+                float percent = (float)throttle / (float)throttle_span;
+                flyz_max_terrain_follow_altitude = (uint16_t)(alt_cm / percent + 0.5);
+            }
         }
     }
 }
-#endif
 
 bool adjustMulticopterAltitudeFromRCInput(void)
 {
     if (posControl.flags.isTerrainFollowEnabled) {
 
-#if SCALE_ALTITUDE_AT_ALTHOLD
         const float altTarget = scaleRangef(rcCommand[THROTTLE], getThrottleIdleValue(), motorConfig()->maxthrottle, 0, flyz_max_terrain_follow_altitude);
-#else
-        const float altTarget = scaleRangef(rcCommand[THROTTLE], getThrottleIdleValue(), motorConfig()->maxthrottle, 0, navConfig()->general.max_terrain_follow_altitude);
-#endif        
 
         // In terrain follow mode we apply different logic for terrain control
         if (posControl.flags.estAglStatus == EST_TRUSTED && altTarget > 10.0f) {

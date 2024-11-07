@@ -1246,11 +1246,8 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_ALTHOLD_INITIALIZE(navi
 
     // Prepare altitude controller if idle, RTH or WP modes active or surface mode status changed
     if (!(prevFlags & NAV_CTL_ALT) || (prevFlags & NAV_AUTO_RTH) || (prevFlags & NAV_AUTO_WP) || terrainFollowingToggled) {
-#if SCALE_ALTITUDE_AT_ALTHOLD
         // when entering pos hold with NAV_ALTHOLD_MODE we adjust the throttle full span to the current altitude 
-        void flyz_throttle_span_calculate(bool useTerrainFollowing);
         flyz_throttle_span_calculate(navTerrainFollowingRequested());
-#endif        
         resetAltitudeController(navTerrainFollowingRequested());
         setupAltitudeController();
         setDesiredPosition(&navGetCurrentActualPositionAndVelocity()->pos, posControl.actualState.yaw, NAV_POS_UPDATE_Z);  // This will reset surface offset
@@ -1263,11 +1260,17 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_ALTHOLD_IN_PROGRESS(nav
 {
     UNUSED(previousState);
 
-#if DISABLE_GPS_AT_ALTHOLD==1 || DISABLE_GPS_AT_ALTHOLD==5
+#if DISABLE_GPS_AT_ALTHOLD
     if ( navTerrainFollowingRequested() != posControl.flags.isTerrainFollowEnabled )
     {
-        // force re-entrance to init state with fake state that will cause re initialization 
-        navOnEnteringState_NAV_STATE_ALTHOLD_INITIALIZE(NAV_STATE_IDLE);
+        if ( pidProfile()->flyz_config_val & FLYZ_CONFIG_MASK_RESET_POS_HOLD_SWTICH ) {
+            // force re-entrance to init state with fake state that will cause re initialization 
+            navOnEnteringState_NAV_STATE_ALTHOLD_INITIALIZE(NAV_STATE_IDLE);
+        }
+        else if ( pidProfile()->flyz_config_val & FLYZ_CONFIG_MASK_SCALE_THROTTLE) {
+            // when entering pos hold with NAV_ALTHOLD_MODE we adjust the throttle full span to the current altitude 
+            flyz_throttle_span_calculate(navTerrainFollowingRequested());
+        }
     }
 #endif
 
@@ -1290,11 +1293,8 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_POSHOLD_3D_INITIALIZE(n
     // Prepare altitude controller if idle, RTH or WP modes active or surface mode status changed
     if (!(prevFlags & NAV_CTL_ALT) || (prevFlags & NAV_AUTO_RTH) || (prevFlags & NAV_AUTO_WP) || terrainFollowingToggled) {
 
-#if SCALE_ALTITUDE_AT_ALTHOLD
         // when entering pos hold with NAV_ALTHOLD_MODE we adjust the throttle full span to the current altitude 
-        void flyz_throttle_span_calculate(bool useTerrainFollowing);
         flyz_throttle_span_calculate(navTerrainFollowingRequested());
-#endif        
         resetAltitudeController(navTerrainFollowingRequested());
         setupAltitudeController();
         setDesiredPosition(&navGetCurrentActualPositionAndVelocity()->pos, posControl.actualState.yaw, NAV_POS_UPDATE_Z);  // This will reset surface offset
@@ -1319,11 +1319,17 @@ static navigationFSMEvent_t navOnEnteringState_NAV_STATE_POSHOLD_3D_IN_PROGRESS(
 {
     UNUSED(previousState);
 
-#if DISABLE_GPS_AT_ALTHOLD==1 || DISABLE_GPS_AT_ALTHOLD==5
+#if DISABLE_GPS_AT_ALTHOLD
     if ( navTerrainFollowingRequested() != posControl.flags.isTerrainFollowEnabled )
     {
-        // force re-entrance to init state with fake state that will cause re initialization 
-        navOnEnteringState_NAV_STATE_POSHOLD_3D_INITIALIZE(NAV_STATE_IDLE);
+        if ( pidProfile()->flyz_config_val & FLYZ_CONFIG_MASK_RESET_POS_HOLD_SWTICH ) {
+            // force re-entrance to init state with fake state that will cause re initialization 
+            navOnEnteringState_NAV_STATE_POSHOLD_3D_INITIALIZE(NAV_STATE_IDLE);
+        }
+        else if ( pidProfile()->flyz_config_val & FLYZ_CONFIG_MASK_SCALE_THROTTLE) {
+            // when entering pos hold with NAV_ALTHOLD_MODE we adjust the throttle full span to the current altitude 
+            flyz_throttle_span_calculate(navTerrainFollowingRequested());
+        }
     }
 #endif
 
@@ -2711,6 +2717,7 @@ bool checkForPositionSensorTimeout(void)
  *-----------------------------------------------------------*/
 void updateActualHorizontalPositionAndVelocity(bool estPosValid, bool estVelValid, float newX, float newY, float newVelX, float newVelY)
 {
+    // all the values here are on earth frame after mul of eother imu/opflow values by orientation matrix 
     posControl.actualState.abs.pos.x = newX;
     posControl.actualState.abs.pos.y = newY;
     posControl.actualState.abs.vel.x = newVelX;

@@ -51,7 +51,8 @@ else()
     endif()
 endif()
 
-project(INAV VERSION 7.1.2)
+#project(INAV VERSION 7.1.2) FLYZ 
+project(INAV VERSION 7.5.0)
 
 enable_language(ASM)
 

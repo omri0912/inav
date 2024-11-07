@@ -76,7 +76,7 @@ static void virtualPitotCalculate(pitotDev_t *pitot, float *pressure, float *tem
             airSpeed = calc_length_pythagorean_3D(gpsSol.velNED[X],gpsSol.velNED[Y],gpsSol.velNED[Z]);
         }
         else {
-            airSpeed = pidProfile()->fixedWingReferenceAirspeed; //float cm/s
+            airSpeed = 1500; // pidProfile()->fixedWingReferenceAirspeed was removed and 1500 was its defualt 
         }
     }
     if (pressure)

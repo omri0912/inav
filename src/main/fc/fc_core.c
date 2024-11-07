@@ -406,42 +406,10 @@ static void processPilotAndFailSafeActions(float dT)
             if ( flyz_ref_pitch==0 ) {
                 flyz_ref_pitch = pitch_1000_2000; // save starting pos 
             }
-            //int16_t pitch_angle_deci_degrees = (int16_t)attitude.values.pitch;
-#if 0 // set yaw_lpf_hz = 20 --> try to reach 20 degrees pitch angle 
-            static int16_t pitch_correction = 0;
-            const int16_t target_pitch = pidProfile()->yaw_lpf_hz; // pitch angle in deci degrees 
-            static float fpitch = 9999999;
-            if ( fpitch > 360.0 ) {
-                fpitch = pitch_angle_deci_degrees;
-            }
-            else {
-                fpitch = 0.9 * fpitch + pitch_angle_deci_degrees;
-            }
-            if ( fpitch < target_pitch-5 && pitch_correction < 100 ) {
-                pitch_correction++;           
-            }
-            else if ( fpitch > target_pitch+5 && pitch_correction > -100 ) {
-                pitch_correction--;           
-            }
-            pitch_1000_2000 = 1500 + pitch_correction; 
-#else
-            pitch_1000_2000 = pidProfile()->pidItermLimitPercent + (pitch_1000_2000-flyz_ref_pitch); 
-#if PITCH_AT_ALTHOLD==2            
-            if ( attitude.values.roll >= 10 ) {
-                flyz_roll_correction--;
-            }
-            else if ( attitude.values.roll <= -10 ) {
-                flyz_roll_correction++;
-            }
-            roll_1000_2000 += flyz_roll_correction;
-#endif            
-#endif            
+            pitch_1000_2000 = pidProfile()->flyz_pitch_force_value + (pitch_1000_2000-flyz_ref_pitch); 
         }
         else {
             flyz_ref_pitch = 0;
-#if PITCH_AT_ALTHOLD==2            
-            flyz_roll_correction = 0;
-#endif
         }
 #endif
 

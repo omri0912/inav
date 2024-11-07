@@ -119,12 +119,16 @@ typedef struct pidProfile_s {
     uint16_t pidSumLimitYaw;
     uint16_t pidItermLimitPercent;
 
-    // Airplane-specific parameters
-    float       fixedWingReferenceAirspeed;     // Reference tuning airspeed for the airplane - the speed for which PID gains are tuned
-    float       fixedWingCoordinatedYawGain;    // This is the gain of the yaw rate required to keep the yaw rate consistent with the turn rate for a coordinated turn.
-    float       fixedWingCoordinatedPitchGain;    // This is the gain of the pitch rate to keep the pitch angle constant during coordinated turns.
-    float       fixedWingItermLimitOnStickPosition;   //Do not allow Iterm to grow when stick position is above this point
-    uint16_t    fixedWingYawItermBankFreeze;       // Freeze yaw Iterm when bank angle is more than this many degrees
+    // flyz-specific parameters
+    uint16_t flyz_pitch_force_value;
+    uint16_t flyz_min_num_sat_value;
+    uint16_t flyz_config_val;
+    uint16_t flyz_sat_decay_val;
+    uint16_t flyz_opflow_port_val;
+    uint16_t flyz_opflow_is_facing_wall_val;
+    uint16_t flyz_spare2_val;
+    uint16_t flyz_spare3_val;
+    uint16_t flyz_spare4_val;
 
     float       navVelXyDTermLpfHz;
     uint8_t navVelXyDtermAttenuation;       // VEL_XY dynamic Dterm scale: Dterm will be attenuatedby this value (in percent) when UAV is traveling with more than navVelXyDtermAttenuationStart percents of max velocity

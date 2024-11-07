@@ -268,11 +268,15 @@ PG_RESET_TEMPLATE(pidProfile_t, pidProfile,
         .pidSumLimitYaw = SETTING_PIDSUM_LIMIT_YAW_DEFAULT,
         .pidItermLimitPercent = SETTING_PID_ITERM_LIMIT_PERCENT_DEFAULT,
 
-        .fixedWingReferenceAirspeed = SETTING_FW_REFERENCE_AIRSPEED_DEFAULT,
-        .fixedWingCoordinatedYawGain = SETTING_FW_TURN_ASSIST_YAW_GAIN_DEFAULT,
-        .fixedWingCoordinatedPitchGain = SETTING_FW_TURN_ASSIST_PITCH_GAIN_DEFAULT,
-        .fixedWingItermLimitOnStickPosition = SETTING_FW_ITERM_LIMIT_STICK_POSITION_DEFAULT,
-        .fixedWingYawItermBankFreeze = SETTING_FW_YAW_ITERM_FREEZE_BANK_ANGLE_DEFAULT,
+        .flyz_min_num_sat_value = SETTING_FLYZ_MIN_NUM_SAT_DEFAULT,
+        .flyz_pitch_force_value = SETTING_FLYZ_PITCH_FORCE_DEFAULT,
+        .flyz_config_val = SETTING_FLYZ_CONFIG_DEFAULT,
+        .flyz_sat_decay_val = SETTING_FLYZ_SAT_DECAY_DEFAULT,
+        .flyz_opflow_port_val = SETTING_FLYZ_OPFLOW_PORT_DEFAULT,
+        .flyz_opflow_is_facing_wall_val = SETTING_FLYZ_OPFLOW_IS_FACING_WALL_DEFAULT,
+        .flyz_spare2_val = SETTING_FLYZ_SPARE2_DEFAULT,
+        .flyz_spare3_val = SETTING_FLYZ_SPARE3_DEFAULT,
+        .flyz_spare4_val = SETTING_FLYZ_SPARE4_DEFAULT,
 
         .navVelXyDTermLpfHz = SETTING_NAV_MC_VEL_XY_DTERM_LPF_HZ_DEFAULT,
         .navVelXyDtermAttenuation = SETTING_NAV_MC_VEL_XY_DTERM_ATTENUATION_DEFAULT,
@@ -682,7 +686,7 @@ bool isFixedWingItermLimitActive(float stickPosition)
         return false;
     }
 
-    return fabsf(stickPosition) > pidProfile()->fixedWingItermLimitOnStickPosition;
+    return fabsf(stickPosition) > 0.5F; // this is the default value of this that was removed pidProfile()->fixedWingItermLimitOnStickPosition
 }
 
 static float pTermProcess(pidState_t *pidState, float rateError, float dT) {
@@ -982,11 +986,10 @@ static void NOINLINE pidTurnAssistant(pidState_t *pidState, float bankAngleTarge
             //      tan(roll_angle) = forward_vel * yaw_rate / Gravity
             // If we solve for yaw rate we get:
             //      yaw_rate = tan(roll_angle) * Gravity / forward_vel
-
-#if defined(USE_PITOT)
-            float airspeedForCoordinatedTurn = sensors(SENSOR_PITOT) && pitotIsHealthy()? getAirspeedEstimate() : pidProfile()->fixedWingReferenceAirspeed;
+#if defined(USE_PITOT) // // this is the default value of this that was removed fixedWingReferenceAirspeed
+            float airspeedForCoordinatedTurn = sensors(SENSOR_PITOT) && pitotIsHealthy()? getAirspeedEstimate() : 1500;
 #else
-            float airspeedForCoordinatedTurn = pidProfile()->fixedWingReferenceAirspeed;
+            float airspeedForCoordinatedTurn = 1500;
 #endif
 
             // Constrain to somewhat sane limits - 10km/h - 216km/h
@@ -1013,11 +1016,11 @@ static void NOINLINE pidTurnAssistant(pidState_t *pidState, float bankAngleTarge
 
     // Add in roll and pitch
     pidState[ROLL].rateTarget = constrainf(pidState[ROLL].rateTarget + targetRates.x, -currentControlRateProfile->stabilized.rates[ROLL] * 10.0f, currentControlRateProfile->stabilized.rates[ROLL] * 10.0f);
-    pidState[PITCH].rateTarget = constrainf(pidState[PITCH].rateTarget + targetRates.y * pidProfile()->fixedWingCoordinatedPitchGain, -currentControlRateProfile->stabilized.rates[PITCH] * 10.0f, currentControlRateProfile->stabilized.rates[PITCH] * 10.0f);
+    pidState[PITCH].rateTarget = constrainf(pidState[PITCH].rateTarget + targetRates.y, -currentControlRateProfile->stabilized.rates[PITCH] * 10.0f, currentControlRateProfile->stabilized.rates[PITCH] * 10.0f);
 
     // Replace YAW on quads - add it in on airplanes
     if (STATE(AIRPLANE)) {
-        pidState[YAW].rateTarget = constrainf(pidState[YAW].rateTarget + targetRates.z * pidProfile()->fixedWingCoordinatedYawGain, -currentControlRateProfile->stabilized.rates[YAW] * 10.0f, currentControlRateProfile->stabilized.rates[YAW] * 10.0f);
+        pidState[YAW].rateTarget = constrainf(pidState[YAW].rateTarget + targetRates.z, -currentControlRateProfile->stabilized.rates[YAW] * 10.0f, currentControlRateProfile->stabilized.rates[YAW] * 10.0f);
     }
     else {
         pidState[YAW].rateTarget = constrainf(targetRates.z, -currentControlRateProfile->stabilized.rates[YAW] * 10.0f, currentControlRateProfile->stabilized.rates[YAW] * 10.0f);
@@ -1058,20 +1061,9 @@ void checkItermLimitingActive(pidState_t *pidState)
 
 void checkItermFreezingActive(pidState_t *pidState, flight_dynamics_index_t axis)
 {
-    if (usedPidControllerType == PID_TYPE_PIFF && pidProfile()->fixedWingYawItermBankFreeze != 0 && axis == FD_YAW) {
-        // Do not allow yaw I-term to grow when bank angle is too large
-        float bankAngle = DECIDEGREES_TO_DEGREES(attitude.values.roll);
-        if (fabsf(bankAngle) > pidProfile()->fixedWingYawItermBankFreeze && !(FLIGHT_MODE(AUTO_TUNE) || FLIGHT_MODE(TURN_ASSISTANT) || navigationRequiresTurnAssistance())){
-            pidState->itermFreezeActive = true;
-        } else
-        {
-            pidState->itermFreezeActive = false;
-        }
-    } else
-    {
-        pidState->itermFreezeActive = false;
-    }
-
+    // pidProfile()->fixedWingYawItermBankFreeze has default of 0 so the enitre block related to the axis was removed here 
+    (void)axis;
+    pidState->itermFreezeActive = false;
 }
 
 bool isAngleHoldLevel(void)

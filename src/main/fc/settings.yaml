@@ -1929,36 +1929,60 @@ groups:
         default_value: 0
         min: 0
         max: 200
-      - name: fw_reference_airspeed
-        description: "Reference airspeed. Set this to airspeed at which PIDs were tuned. Usually should be set to cruise airspeed. Also used for coordinated turn calculation if airspeed sensor is not present."
+      - name: flyz_pitch_force
+        description: "Forces given value as pitch PWM."
         default_value: 1500
-        field: fixedWingReferenceAirspeed
-        min: 300
-        max: 6000
-      - name: fw_turn_assist_yaw_gain
-        description: "Gain required to keep the yaw rate consistent with the turn rate for a coordinated turn (in TURN_ASSIST mode). Value significantly different from 1.0 indicates a problem with the airspeed calibration (if present) or value of `fw_reference_airspeed` parameter"
-        default_value: 1
-        field: fixedWingCoordinatedYawGain
+        field: flyz_pitch_force_value
+        min: 1000
+        max: 2000
+      - name: flyz_min_num_sat
+        description: "flyz - min number of satellites to keep when disabling satellites. set to 200 to disable this feature."
+        default_value: 4
+        field: flyz_min_num_sat_value
         min: 0
-        max: 2
-      - name: fw_turn_assist_pitch_gain
-        description: "Gain required to keep constant pitch angle during coordinated turns (in TURN_ASSIST mode). Value significantly different from 1.0 indicates a problem with the airspeed calibration (if present) or value of `fw_reference_airspeed` parameter"
-        default_value: 1
-        field: fixedWingCoordinatedPitchGain
+        max: 200
+      - name: flyz_config
+        description: "1=scale-throttle-at-surface-pos-hold 2=reset-at-pos-hold-switch 4=use-nav-pos 8=inav-earth-frame"
+        default_value: 15
+        field: flyz_config_val
         min: 0
-        max: 2
-      - name: fw_iterm_limit_stick_position
-        description: "Iterm is not allowed to grow when stick position is above threshold. This solves the problem of bounceback or followthrough when full stick deflection is applied on poorely tuned fixed wings. In other words, stabilization is partialy disabled when pilot is actively controlling the aircraft and active when sticks are not touched. `0` mean stick is in center position, `1` means it is fully deflected to either side"
-        default_value: 0.5
-        field: fixedWingItermLimitOnStickPosition
+        max: 15
+      - name: flyz_sat_decay
+        description: "flyz new val"
+        default_value: 0
+        field: flyz_sat_decay_val
+        min: 0
+        max: 1000
+      - name: flyz_opflow_port
+        description: "uart port of the main opflow sensor. 0 meeans no opflow."
+        default_value: 0
+        field: flyz_opflow_port_val
+        min: 0
+        max: 8
+      - name: flyz_opflow_is_facing_wall
+        description: "configure the direction at which the main opflow is heading - 0=ground, 1=forwards"
+        default_value: 0
+        field: flyz_opflow_is_facing_wall_val
         min: 0
         max: 1
-      - name: fw_yaw_iterm_freeze_bank_angle
-        description: "Yaw Iterm is frozen when bank angle is above this threshold [degrees]. This solves the problem of the rudder counteracting turns by partially disabling yaw stabilization when making banked turns. Setting to 0 (the default) disables this feature. Only applies when autopilot is not active and TURN ASSIST is disabled."
+      - name: flyz_spare2
+        description: "this is a spare var for future use"
         default_value: 0
-        field: fixedWingYawItermBankFreeze
+        field: flyz_spare2_val
         min: 0
-        max: 90
+        max: 1000
+      - name: flyz_spare3
+        description: "this is a spare var for future use"
+        default_value: 0
+        field: flyz_spare3_val
+        min: 0
+        max: 1000
+      - name: flyz_spare4
+        description: "this is a spare var for future use"
+        default_value: 0
+        field: flyz_spare4_val
+        min: 0
+        max: 1000
       - name: pidsum_limit
         description: "A limitation to overall amount of correction Flight PID can request on each axis (Roll/Pitch). If when doing a hard maneuver on one axis machine looses orientation on other axis - reducing this parameter may help"
         default_value: 500

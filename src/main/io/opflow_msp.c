@@ -37,6 +37,9 @@
 
 #include "io/serial.h"
 
+#include "common/axis.h"
+#include "flight/pid.h"
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <string.h>
@@ -104,33 +107,17 @@ serialPortIdentifier_e mtf_01_identifier = SERIAL_PORT_NONE;
 
 void mtf_01_init(void)
 {
-    // 115 --> uart5 facing the wall  
-    // 104 --> uart5 facing down 
-    uint32_t val = (uint32_t)(opticalFlowConfig()->opflow_scale);
-    uint32_t uart = val % 10;
-    val /= 10;
-    uint32_t is_facing_wall = val % 10;
-    val /= 10;
-
-// serial 0 0 115200 115200 0 115200
-// serial 1 1 115200 115200 0 115200
-// set opflow_scale = 114.0
-// set opflow_scale = 102.0
-
-    // 1 is just a "secret" code 1xy 
-    if ( val==1 && is_facing_wall<2 && uart>0 && uart<9 ) {
-        mtf_01_facing_down = is_facing_wall ? false : true;
-        mtf_01_identifier = uart-1;
-    }
-    else {
+    if ( pidProfile()->flyz_opflow_port_val < 1 || pidProfile()->flyz_opflow_port_val > 8 ) {
         mtf_01_facing_down = true;
         mtf_01_identifier = SERIAL_PORT_NONE; // MSP 
+        return;
     }
 
-#if SCALE_ALTITUDE_AT_ALTHOLD
-    void flyz_throttle_span_init(void);
+    // 1 is just a "secret" code 1xy 
+    mtf_01_facing_down = pidProfile()->flyz_opflow_is_facing_wall_val ? false : true;
+    mtf_01_identifier = pidProfile()->flyz_opflow_port_val-1;
+
     flyz_throttle_span_init();
-#endif
 }
 
 static void mtf_01_init_at_runtime(bool is_facing_wall)
@@ -263,19 +250,30 @@ float mtf_01_get_velocity_cm_sec(int i)
     return mtf_01_vel_cm_sec[i];
 }
 
-#if DISABLE_GPS_AT_ALTHOLD<3 || DISABLE_GPS_AT_ALTHOLD==5
-void flyz_set_agl(void)
+#if DISABLE_GPS_AT_ALTHOLD
+void flyz_surface_action_when_leaving_gps_poshold(void)
 {
     // force new AGL for GPS 
-    if ( mtf_01_is_init ) {
-#if USE_ABS_POS_WHEN_ENTERING_SURFACE_HOLD
-        memcpy(&posControl.actualState.agl,&posControl.actualState.abs,sizeof(navEstimatedPosVel_t));
-        mtf_01_move_cm[0] = posControl.actualState.abs.pos.x;
-        mtf_01_move_cm[1] = posControl.actualState.abs.pos.y;
-        mtf_01_move_cm[2] = posControl.actualState.abs.pos.z;
-#else    
-        mtf_01_move_cm[2] = posControl.actualState.abs.pos.z; // posControl.desiredState.pos.z;//posControl.actualState.agl.pos.z;//navGetCurrentActualPositionAndVelocity()->pos.z;
-#endif    
+    if ( (pidProfile()->flyz_config_val & FLYZ_CONFIG_MASK_USE_CURR_NAV_POS) && 
+          mtf_01_is_init ) {
+
+        // generate temp vector made of positions.
+        fpVector3_t  vect;
+        vect.v[0] = 0;
+        vect.v[1] = 0;
+        vect.v[2] = 0;
+        vect.x = posControl.actualState.agl.pos.x;
+        vect.y = posControl.actualState.agl.pos.y;
+        vect.z = posControl.actualState.agl.pos.z;
+
+        // multiply earth frame by roation matrix using quaternion arithmetics 
+        imuTransformVectorEarthToBody(&vect);
+
+        // use the resul as body frame "position" (position is differencial to some base postition)
+        mtf_01_move_cm[0] = vect.x;
+        mtf_01_move_cm[1] = vect.y;
+        mtf_01_move_cm[2] = vect.z;
+
         (void)rangefinderProcess(1.0);
     }
 }
@@ -437,9 +435,17 @@ void mtf_01_micolink_decode(serialPortIdentifier_e identifier, uint8_t data)
             }
 #elif MUX_FOR_OPFLOW_SWITCH
             // at end of a packet - check if AUX changed 
-            if ( IS_RC_MODE_ACTIVE(BOXLOITERDIRCHN) ? mtf_01_facing_down : !mtf_01_facing_down ) {
-                mtf_01_init_at_runtime(mtf_01_facing_down);
-                DEBUG_SET(DEBUG_FLOW, 7, mtf_01_facing_down);
+            if ( IS_RC_MODE_ACTIVE(BOXLOITERDIRCHN) ) {
+                if ( mtf_01_facing_down ) {
+                    mtf_01_init_at_runtime(true);
+                    DEBUG_SET(DEBUG_FLOW, 7, 1);
+                }
+            }
+            else {
+                if ( !mtf_01_facing_down ) {
+                    mtf_01_init_at_runtime(false);
+                    DEBUG_SET(DEBUG_FLOW, 7, 0);
+                }
             }
 #endif
             break;

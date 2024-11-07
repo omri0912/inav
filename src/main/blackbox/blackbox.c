@@ -85,7 +85,8 @@
 #include "sensors/esc_sensor.h"
 #include "flight/wind_estimator.h"
 #include "sensors/temperature.h"
-#include "vgps.h"
+
+#include "flyz.h"
 
 #if defined(ENABLE_BLACKBOX_LOGGING_ON_SPIFLASH_BY_DEFAULT)
 #define DEFAULT_BLACKBOX_DEVICE     BLACKBOX_DEVICE_FLASH
@@ -959,8 +960,15 @@ static void writeIntraframe(void)
      * NAV_POS fields
      */
     if (testBlackboxCondition(FLIGHT_LOG_FIELD_CONDITION_NAV_POS)) {
+#if FLYZ_OVERRIDE_BB_NAV        
+        int32_t val = gpsSol.numSat;
+        blackboxWriteSignedVB(val/*blackboxCurrent->navEPH - blackboxLast->navEPH*/);
+        val = IS_RC_MODE_ACTIVE(BOXTURTLE);
+        blackboxWriteSignedVB(val/*->navEPV - blackboxLast->navEPV*/);
+#else
         blackboxWriteSignedVB(blackboxCurrent->navEPH);
         blackboxWriteSignedVB(blackboxCurrent->navEPV);
+#endif
 
         for (int x = 0; x < XYZ_AXIS_COUNT; x++) {
             blackboxWriteSignedVB(blackboxCurrent->navPos[x]);
@@ -1216,9 +1224,16 @@ static void writeInterframe(void)
      * NAV_POS fields
      */
     if (testBlackboxCondition(FLIGHT_LOG_FIELD_CONDITION_NAV_POS)) {
-        blackboxWriteSignedVB(gpsSol.numSat/*blackboxCurrent->navEPH - blackboxLast->navEPH*/);
-        blackboxWriteSignedVB(IS_RC_MODE_ACTIVE(BOXTURTLE)/*->navEPV - blackboxLast->navEPV*/);
 
+#if FLYZ_OVERRIDE_BB_NAV        
+        int32_t val = gpsSol.numSat;
+        blackboxWriteSignedVB(val/*blackboxCurrent->navEPH - blackboxLast->navEPH*/);
+        val = IS_RC_MODE_ACTIVE(BOXTURTLE);
+        blackboxWriteSignedVB(val/*->navEPV - blackboxLast->navEPV*/);
+#else
+        blackboxWriteSignedVB(blackboxCurrent->navEPH - blackboxLast->navEPH);
+        blackboxWriteSignedVB(blackboxCurrent->navEPV - blackboxLast->navEPV);
+#endif
         for (int x = 0; x < XYZ_AXIS_COUNT; x++) {
             blackboxWriteSignedVB(blackboxCurrent->navPos[x] - blackboxLast->navPos[x]);
         }
